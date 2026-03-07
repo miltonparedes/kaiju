@@ -6,3 +6,6 @@ drizzle/meta
 .env*
 *.tsbuildinfo
 test-results
+.claude
+.factory
+.mcp.json
