@@ -1,0 +1,30 @@
+{
+  "plugins": ["typescript", "react", "import", "unicorn"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "perf": "warn",
+    "style": "warn"
+  },
+  "rules": {
+    "import/no-named-export": "off",
+    "import/group-exports": "off",
+    "import/no-namespace": "off",
+    "import/no-default-export": "off",
+    "import/prefer-default-export": "off",
+    "import/exports-last": "off",
+    "import/consistent-type-specifier-style": "off",
+    "func-style": "off",
+    "sort-imports": "off",
+    "sort-keys": "off",
+    "no-implicit-coercion": "off",
+    "no-magic-numbers": "off",
+    "no-ternary": "off",
+    "id-length": "off",
+    "react/react-in-jsx-scope": "off",
+    "unicorn/text-encoding-identifier-case": "off",
+    "unicorn/filename-case": "off",
+    "unicorn/no-null": "off"
+  },
+  "ignorePatterns": ["node_modules", "dist", ".output", "*.gen.ts", "drizzle"]
+}
