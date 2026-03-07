@@ -1,5 +1,7 @@
 import { Outlet, HeadContent, Scripts, createRootRoute } from '@tanstack/react-router';
 
+import appCssUrl from '../styles/app.css?url';
+
 export const Route = createRootRoute({
   component: RootLayout,
   head: () => ({
@@ -8,7 +10,7 @@ export const Route = createRootRoute({
       { name: 'viewport', content: 'width=device-width, initial-scale=1' },
       { title: 'Kaiju' },
     ],
-    links: [{ rel: 'stylesheet', href: '/src/styles/app.css' }],
+    links: [{ rel: 'stylesheet', href: appCssUrl }],
   }),
 });
 
