@@ -1,37 +1,167 @@
 import { sql } from 'drizzle-orm';
-import { sqliteTable, integer, text } from 'drizzle-orm/sqlite-core';
+import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
-export const pullRequests = sqliteTable('pull_requests', {
-  id: integer('id').primaryKey(),
-  number: integer('number').notNull(),
-  title: text('title').notNull(),
-  url: text('url').notNull(),
+// ─── reviews ────────────────────────────────────────────────────────────────────
+// One kaiju per PR. Key format: "github/org/repo/9999"
+export const reviews = sqliteTable('reviews', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  key: text('key').notNull().unique(),
   provider: text('provider').notNull(),
-  baseBranch: text('base_branch').notNull(),
-  headBranch: text('head_branch').notNull(),
+  repo: text('repo').notNull(),
+  pr: integer('pr').notNull(),
+  title: text('title').notNull().default(''),
+  url: text('url').notNull().default(''),
+  base: text('base').notNull().default(''),
+  head: text('head').notNull().default(''),
+  status: text('status').notNull().default('fetched'),
+  rawDiff: text('raw_diff'),
   createdAt: integer('created_at')
+    .notNull()
+    .default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at')
     .notNull()
     .default(sql`(unixepoch())`),
 });
 
-export const chunks = sqliteTable('chunks', {
-  id: integer('id').primaryKey(),
-  prId: integer('pr_id')
-    .notNull()
-    .references(() => pullRequests.id),
-  label: text('label').notNull(),
-  createdAt: integer('created_at')
-    .notNull()
-    .default(sql`(unixepoch())`),
-});
+// ─── files ──────────────────────────────────────────────────────────────────────
+// Changed files in a PR
+export const files = sqliteTable(
+  'files',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    reviewId: integer('review_id')
+      .notNull()
+      .references(() => reviews.id, { onDelete: 'cascade' }),
+    path: text('path').notNull(),
+    status: text('status').notNull().default('modified'),
+    additions: integer('additions').notNull().default(0),
+    deletions: integer('deletions').notNull().default(0),
+    chunkId: integer('chunk_id').references(() => chunks.id, { onDelete: 'set null' }),
+  },
+  (table) => [
+    uniqueIndex('idx_files_review_path').on(table.reviewId, table.path),
+    index('idx_files_chunk').on(table.chunkId),
+  ],
+);
 
-export const findings = sqliteTable('findings', {
-  id: integer('id').primaryKey(),
-  chunkId: integer('chunk_id')
-    .notNull()
-    .references(() => chunks.id),
-  type: text('type').notNull(),
-  message: text('message').notNull(),
-  file: text('file').notNull(),
-  line: integer('line'),
-});
+// ─── imports ────────────────────────────────────────────────────────────────────
+// Dependency graph between files
+export const imports = sqliteTable(
+  'imports',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    reviewId: integer('review_id')
+      .notNull()
+      .references(() => reviews.id, { onDelete: 'cascade' }),
+    source: text('source').notNull(),
+    target: text('target').notNull(),
+  },
+  (table) => [
+    index('idx_imports_review_source').on(table.reviewId, table.source),
+    index('idx_imports_review_target').on(table.reviewId, table.target),
+  ],
+);
+
+// ─── chunks ─────────────────────────────────────────────────────────────────────
+// Logical groupings of files
+export const chunks = sqliteTable(
+  'chunks',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    reviewId: integer('review_id')
+      .notNull()
+      .references(() => reviews.id, { onDelete: 'cascade' }),
+    slug: text('slug').notNull(),
+    title: text('title').notNull().default(''),
+    description: text('description').notNull().default(''),
+    reviewPriority: text('review_priority').notNull().default('medium'),
+    estimatedTokens: integer('estimated_tokens').notNull().default(0),
+    status: text('status').notNull().default('pending'),
+    createdAt: integer('created_at')
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [uniqueIndex('idx_chunks_review_slug').on(table.reviewId, table.slug)],
+);
+
+// ─── chunk_deps ─────────────────────────────────────────────────────────────────
+// Dependencies between chunks
+export const chunkDeps = sqliteTable(
+  'chunk_deps',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    sourceChunkId: integer('source_chunk_id')
+      .notNull()
+      .references(() => chunks.id, { onDelete: 'cascade' }),
+    targetChunkId: integer('target_chunk_id')
+      .notNull()
+      .references(() => chunks.id, { onDelete: 'cascade' }),
+  },
+  (table) => [uniqueIndex('idx_chunk_deps_pair').on(table.sourceChunkId, table.targetChunkId)],
+);
+
+// ─── comments ───────────────────────────────────────────────────────────────────
+// Imported from the PR (GitHub/GitLab)
+export const comments = sqliteTable(
+  'comments',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    reviewId: integer('review_id')
+      .notNull()
+      .references(() => reviews.id, { onDelete: 'cascade' }),
+    threadId: text('thread_id').notNull(),
+    source: text('source').notNull().default('github'),
+    state: text('state').notNull().default('open'),
+    chunkId: integer('chunk_id').references(() => chunks.id, { onDelete: 'set null' }),
+    file: text('file'),
+    line: integer('line'),
+    body: text('body').notNull().default(''),
+    author: text('author'),
+    timestamp: text('timestamp'),
+    ghCommentId: integer('gh_comment_id'),
+    createdAt: integer('created_at')
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [
+    index('idx_comments_review_file_line').on(table.reviewId, table.file, table.line),
+    index('idx_comments_thread').on(table.threadId),
+    index('idx_comments_chunk').on(table.chunkId),
+  ],
+);
+
+// ─── findings ───────────────────────────────────────────────────────────────────
+// Generated by agents or humans via Kaiju
+export const findings = sqliteTable(
+  'findings',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    reviewId: integer('review_id')
+      .notNull()
+      .references(() => reviews.id, { onDelete: 'cascade' }),
+    chunkId: integer('chunk_id').references(() => chunks.id, { onDelete: 'set null' }),
+    reviewer: text('reviewer').notNull().default(''),
+    file: text('file').notNull(),
+    line: integer('line'),
+    endLine: integer('end_line'),
+    severity: text('severity').notNull().default('suggestion'),
+    message: text('message').notNull(),
+    suggestion: text('suggestion'),
+    codeSuggestion: text('code_suggestion'),
+    rootCause: text('root_cause'),
+    impact: text('impact'),
+    status: text('status').notNull().default('open'),
+    publish: integer('publish', { mode: 'boolean' }).notNull().default(false),
+    inReplyTo: text('in_reply_to'),
+    timestamp: text('timestamp'),
+    createdAt: integer('created_at')
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [
+    index('idx_findings_review_file_line').on(table.reviewId, table.file, table.line),
+    index('idx_findings_severity').on(table.severity),
+    index('idx_findings_reviewer').on(table.reviewer),
+    index('idx_findings_chunk').on(table.chunkId),
+  ],
+);
