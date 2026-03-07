@@ -189,3 +189,4 @@ export * from './schema.js';
 export * from './fileIO.js';
 export * from './fileTypes.js';
 export * from './kaijuStore.js';
+export * from './recovery.js';

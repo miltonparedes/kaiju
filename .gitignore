@@ -7,5 +7,6 @@ drizzle/meta
 *.tsbuildinfo
 test-results
 .claude
+.factory
 
 .mcp.json

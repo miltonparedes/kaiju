@@ -17,6 +17,7 @@ export interface ManifestSource {
   base: string;
   head: string;
   url: string;
+  title?: string;
 }
 
 export interface ManifestStats {
