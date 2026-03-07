@@ -1,0 +1,11 @@
+{
+  "singleQuote": true,
+  "semi": true,
+  "trailingComma": "all",
+  "printWidth": 100,
+  "sortImports": {
+    "internalPatterns": ["@kaiju/**"]
+  },
+  "sortPackageJson": true,
+  "ignorePatterns": ["*.gen.ts", "test-results"]
+}

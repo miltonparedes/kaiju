@@ -1,0 +1,12 @@
+{
+  "name": "@kaiju/cli",
+  "version": "0.0.0",
+  "bin": {
+    "kaiju": "./src/index.ts"
+  },
+  "type": "module",
+  "dependencies": {
+    "@kaiju/core": "workspace:*",
+    "commander": "~14.0.0"
+  }
+}
