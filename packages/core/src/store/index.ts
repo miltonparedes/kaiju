@@ -186,3 +186,5 @@ export function createTables(db: DB) {
 }
 
 export * from './schema.js';
+export * from './fileIO.js';
+export * from './fileTypes.js';
