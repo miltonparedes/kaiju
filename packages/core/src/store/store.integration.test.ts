@@ -7,6 +7,7 @@ describe('store integration', () => {
   it('creates an in-memory database', () => {
     const db = createDB();
     expect(db).toBeDefined();
+    db.close();
   });
 
   it('can insert and query pull requests', () => {
@@ -25,5 +26,12 @@ describe('store integration', () => {
     const rows = db.select().from(pullRequests).all();
     expect(rows).toHaveLength(1);
     expect(rows[0]!.title).toBe('Test PR');
+    db.close();
+  });
+
+  it('exposes close method to release the sqlite connection', () => {
+    const db = createDB();
+    expect(typeof db.close).toBe('function');
+    db.close();
   });
 });

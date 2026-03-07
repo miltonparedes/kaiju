@@ -36,7 +36,7 @@ export function createDB(path = ':memory:') {
     )`);
   }
 
-  return db;
+  return Object.assign(db, { close: () => sqlite.close() });
 }
 
 export * from './schema.js';
