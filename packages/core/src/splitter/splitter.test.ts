@@ -296,6 +296,14 @@ describe('planSplit', () => {
     expect(() => planSplit(files, plan)).toThrow(/duplicate|unique/i);
   });
 
+  it('rejects _uncategorized as a user-defined chunk ID', () => {
+    const files = [makeFile('src/a.ts')];
+
+    const plan: PlanChunkDef[] = [{ id: '_uncategorized', title: 'My chunk', files: ['src/*'] }];
+
+    expect(() => planSplit(files, plan)).toThrow(/_uncategorized.*reserved/i);
+  });
+
   it('preserves review_priority from plan', () => {
     const files = [makeFile('src/a.ts')];
 
@@ -395,6 +403,40 @@ describe('subdivideChunks', () => {
     const result = subdivideChunks([assignment], files, 50);
     const ids = result.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('marks single-file chunks exceeding max-tokens as oversized instead of silently passing', () => {
+    // Single file with huge token count (200+50 = 250 lines → ~2500 tokens)
+    const files = [makeFile('src/big.ts', 200, 50)];
+
+    const assignment: ChunkAssignment = {
+      id: '001-single',
+      title: 'Single file chunk',
+      description: '',
+      reviewPriority: 'medium',
+      filePaths: ['src/big.ts'],
+    };
+
+    // maxTokens is 100, but single file has ~2500 estimated tokens
+    const result = subdivideChunks([assignment], files, 100);
+    expect(result.length).toBe(1);
+    expect(result[0]!.oversized).toBe(true);
+  });
+
+  it('does not mark chunks under max-tokens as oversized', () => {
+    const files = [makeFile('src/small.ts', 5, 2)];
+
+    const assignment: ChunkAssignment = {
+      id: '001-small',
+      title: 'Small chunk',
+      description: '',
+      reviewPriority: 'medium',
+      filePaths: ['src/small.ts'],
+    };
+
+    const result = subdivideChunks([assignment], files, 10_000);
+    expect(result.length).toBe(1);
+    expect(result[0]!.oversized).toBeUndefined();
   });
 });
 

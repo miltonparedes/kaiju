@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import type { ChunkMetaJson, ManifestJson } from '../store/fileTypes.js';
+import type { ChunkMetaJson, CommentFileJson, ManifestJson } from '../store/fileTypes.js';
 import { createDB } from '../store/index.js';
 import { KaijuStore } from '../store/kaijuStore.js';
 import { splitAndPersist } from './splitAndPersist.js';
@@ -329,6 +329,138 @@ describe('VAL-SPLIT-009: Comments assigned to correct chunks', () => {
 
     expect(authComment!.chunkId).toBe(authChunk!.id);
     expect(routesComment!.chunkId).toBe(routesChunk!.id);
+  });
+});
+
+// ─── Comment disk persistence after split ───────────────────────────────────
+
+describe('Comment disk persistence after split', () => {
+  it('comments/*.json files reflect updated chunk_id after split', async () => {
+    const filePaths = ['src/auth/session.ts', 'src/routes/api.ts'];
+    await createTestReview(filePaths);
+
+    await store.addComment(REVIEW_KEY, {
+      threadId: 'gh-review-100',
+      source: 'github',
+      state: 'open',
+      file: 'src/auth/session.ts',
+      line: 10,
+      body: 'Auth comment',
+      author: 'alice',
+    });
+
+    await splitAndPersist(store, REVIEW_KEY, {
+      strategy: 'plan',
+      plan: JSON.stringify({
+        chunks: [
+          { id: '001-auth', title: 'Auth', files: ['src/auth/*'] },
+          { id: '002-routes', title: 'Routes', files: ['src/routes/*'] },
+        ],
+      }),
+    });
+
+    // Read the comment file from disk
+    const commentPath = join(reviewDir(), 'comments', 'gh-review-100.json');
+    expect(existsSync(commentPath)).toBe(true);
+
+    const commentFile: CommentFileJson = JSON.parse(await readFile(commentPath, 'utf-8'));
+    expect(commentFile.chunk_id).toBe('001-auth');
+  });
+
+  it('chunk *.meta.json includes comment thread IDs after split', async () => {
+    const filePaths = ['src/auth/session.ts', 'src/routes/api.ts'];
+    await createTestReview(filePaths);
+
+    await store.addComment(REVIEW_KEY, {
+      threadId: 'gh-review-100',
+      source: 'github',
+      state: 'open',
+      file: 'src/auth/session.ts',
+      line: 10,
+      body: 'Auth comment',
+      author: 'alice',
+    });
+
+    await splitAndPersist(store, REVIEW_KEY, {
+      strategy: 'plan',
+      plan: JSON.stringify({
+        chunks: [
+          { id: '001-auth', title: 'Auth', files: ['src/auth/*'] },
+          { id: '002-routes', title: 'Routes', files: ['src/routes/*'] },
+        ],
+      }),
+    });
+
+    // Read auth chunk meta
+    const authMetaPath = join(reviewDir(), 'chunks', '001-auth.meta.json');
+    const authMeta: ChunkMetaJson = JSON.parse(await readFile(authMetaPath, 'utf-8'));
+    expect(authMeta.comments).toContain('gh-review-100');
+
+    // Routes chunk should have no comments
+    const routesMetaPath = join(reviewDir(), 'chunks', '002-routes.meta.json');
+    const routesMeta: ChunkMetaJson = JSON.parse(await readFile(routesMetaPath, 'utf-8'));
+    expect(routesMeta.comments.length).toBe(0);
+  });
+
+  it('manifest.json stats accurate after split with comments', async () => {
+    const filePaths = ['src/auth/session.ts', 'src/routes/api.ts'];
+    await createTestReview(filePaths);
+
+    await store.addComment(REVIEW_KEY, {
+      threadId: 'gh-review-100',
+      source: 'github',
+      state: 'open',
+      file: 'src/auth/session.ts',
+      line: 10,
+      body: 'Auth comment',
+      author: 'alice',
+    });
+
+    await splitAndPersist(store, REVIEW_KEY, {
+      strategy: 'plan',
+      plan: JSON.stringify({
+        chunks: [
+          { id: '001-auth', title: 'Auth', files: ['src/auth/*'] },
+          { id: '002-routes', title: 'Routes', files: ['src/routes/*'] },
+        ],
+      }),
+    });
+
+    const manifestPath = join(reviewDir(), 'manifest.json');
+    const manifest: ManifestJson = JSON.parse(await readFile(manifestPath, 'utf-8'));
+
+    expect(manifest.stats.total_comments).toBe(1);
+    expect(manifest.stats.total_chunks).toBe(2);
+
+    // Auth chunk should have 1 comment_count
+    const authChunk = manifest.chunks.find((c) => c.id === '001-auth');
+    expect(authChunk!.comments_count).toBe(1);
+
+    // Routes chunk should have 0 comments_count
+    const routesChunk = manifest.chunks.find((c) => c.id === '002-routes');
+    expect(routesChunk!.comments_count).toBe(0);
+  });
+});
+
+// ─── _uncategorized collision in plan ───────────────────────────────────────
+
+describe('_uncategorized reserved ID rejection', () => {
+  it('rejects plan containing _uncategorized as a chunk ID', async () => {
+    const filePaths = ['src/auth/session.ts'];
+    await createTestReview(filePaths);
+
+    await expect(
+      splitAndPersist(store, REVIEW_KEY, {
+        strategy: 'plan',
+        plan: JSON.stringify({
+          chunks: [{ id: '_uncategorized', title: 'My chunk', files: ['src/*'] }],
+        }),
+      }),
+    ).rejects.toThrow(/_uncategorized.*reserved/i);
+
+    // Verify no side effects
+    const dbChunks = store.getChunks(REVIEW_KEY);
+    expect(dbChunks.length).toBe(0);
   });
 });
 

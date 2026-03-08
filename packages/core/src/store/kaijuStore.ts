@@ -523,6 +523,32 @@ export class KaijuStore {
     this.db.update(comments).set({ chunkId }).where(eq(comments.id, commentId)).run();
   }
 
+  /**
+   * Update a finding's chunk_id in SQLite.
+   * Used by the splitter output pipeline when remapping findings to new chunks.
+   */
+  updateFindingChunkId(findingId: number, chunkId: number | null) {
+    this.db.update(findings).set({ chunkId }).where(eq(findings.id, findingId)).run();
+  }
+
+  /**
+   * Delete all chunks for a review. Also resets file chunk_id references.
+   * Used before re-splitting a review.
+   */
+  deleteChunksForReview(key: string) {
+    const review = this.getReview(key);
+    if (!review) return;
+
+    // Reset file chunk_id references
+    this.db.update(files).set({ chunkId: null }).where(eq(files.reviewId, review.id)).run();
+
+    // Reset comment chunk_id references
+    this.db.update(comments).set({ chunkId: null }).where(eq(comments.reviewId, review.id)).run();
+
+    // Delete chunks
+    this.db.delete(chunks).where(eq(chunks.reviewId, review.id)).run();
+  }
+
   // ─── Findings CRUD ──────────────────────────────────────────────────────────
 
   /**
@@ -607,6 +633,66 @@ export class KaijuStore {
     const review = this.getReview(key);
     if (!review) return [];
     return this.db.select().from(findings).where(eq(findings.reviewId, review.id)).all();
+  }
+
+  // ─── Public Sync Helpers ─────────────────────────────────────────────────
+
+  /**
+   * Public wrapper around syncManifest for use by the splitter pipeline.
+   * Ensures manifest.json stats are accurate after split + comment assignment.
+   */
+  async syncManifestPublic(key: string) {
+    await this.syncManifest(key);
+  }
+
+  /**
+   * Write a comment file to disk for the given review.
+   * Used by the splitter pipeline to persist comment chunk_id updates.
+   */
+  async writeCommentFilePublic(key: string, threadId: string, commentData: CommentFileJson) {
+    const reviewDir = getReviewDir(key, this.baseDir);
+    await writeCommentFile(reviewDir, threadId, commentData);
+  }
+
+  /**
+   * Re-sync a single chunk's .meta.json file with current DB state.
+   * Updates comments and findings arrays after comment/finding assignment.
+   */
+  async resyncChunkMeta(key: string, chunkSlug: string) {
+    const review = this.getReview(key);
+    if (!review) return;
+
+    const dbChunks = this.db.select().from(chunks).where(eq(chunks.reviewId, review.id)).all();
+    const chunk = dbChunks.find((c) => c.slug === chunkSlug);
+    if (!chunk) return;
+
+    const chunkFiles = this.getChunkFiles(review.id, chunk.id);
+    const chunkComments = this.getChunkCommentThreadIds(review.id, chunk.id);
+    const chunkFindings = this.getChunkFindingIds(review.id, chunk.id);
+
+    const meta: ChunkMetaJson = {
+      id: chunk.slug,
+      title: chunk.title,
+      description: chunk.description,
+      review_priority: chunk.reviewPriority as ReviewPriority,
+      estimated_tokens: chunk.estimatedTokens,
+      files: chunkFiles.map((f) => ({
+        path: f.path,
+        status: f.status as FileStatus,
+        additions: f.additions,
+        deletions: f.deletions,
+      })),
+      context: {
+        imports_from: [],
+        imported_by: [],
+        has_breaking_changes: false,
+      },
+      comments: chunkComments,
+      findings: chunkFindings,
+    };
+
+    const reviewDir = getReviewDir(key, this.baseDir);
+    await writeChunkMeta(reviewDir, chunk.slug, meta);
   }
 
   // ─── Close ────────────────────────────────────────────────────────────────

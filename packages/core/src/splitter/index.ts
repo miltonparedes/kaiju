@@ -11,6 +11,8 @@ export interface ChunkAssignment {
   description: string;
   reviewPriority: ReviewPriority;
   filePaths: string[];
+  /** Set to true when a single-file chunk exceeds maxTokens and cannot be subdivided further. */
+  oversized?: boolean;
 }
 
 /** Input for the high-level splitFiles function. */
@@ -207,9 +209,14 @@ export function parsePlan(planJson: string): PlanJson {
  * Enforces chunk ID uniqueness.
  */
 export function planSplit(files: FileEntry[], plan: PlanChunkDef[]): ChunkAssignment[] {
-  // Validate chunk ID uniqueness
+  // Validate chunk IDs: uniqueness + reserved IDs
   const idSet = new Set<string>();
   for (const def of plan) {
+    if (def.id === '_uncategorized') {
+      throw new Error(
+        '"_uncategorized" is a reserved chunk ID used for unmatched files. Choose a different ID.',
+      );
+    }
     if (idSet.has(def.id)) {
       throw new Error(`Duplicate chunk ID: "${def.id}". Chunk IDs must be unique.`);
     }
@@ -298,8 +305,14 @@ export function subdivideChunks(
       fileTokens.push({ path, tokens });
     }
 
-    if (totalTokens <= maxTokens || chunk.filePaths.length <= 1) {
+    if (totalTokens <= maxTokens) {
       result.push(chunk);
+      continue;
+    }
+
+    // Single-file chunks that exceed max-tokens cannot be subdivided further
+    if (chunk.filePaths.length <= 1) {
+      result.push({ ...chunk, oversized: true });
       continue;
     }
 

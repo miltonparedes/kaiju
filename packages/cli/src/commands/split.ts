@@ -256,6 +256,7 @@ export const splitCommand = new Command('split')
           strategy,
           plan: planContent,
           maxTokens,
+          keepFindings: options.keepFindings,
         });
 
         // Gather summary data

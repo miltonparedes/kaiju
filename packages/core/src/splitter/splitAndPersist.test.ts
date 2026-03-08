@@ -355,6 +355,92 @@ describe('splitAndPersist', () => {
     }
   });
 
+  // ─── keepFindings — re-split with finding remapping ────────────────────────
+
+  it('remaps findings to new chunks when keepFindings is set', async () => {
+    const filePaths = ['src/auth/session.ts', 'src/routes/api.ts'];
+    const { store, cleanup } = await setupReview(filePaths);
+
+    // First split
+    await splitAndPersist(store, REVIEW_KEY, {
+      strategy: 'plan',
+      plan: JSON.stringify({
+        chunks: [
+          { id: '001-auth', title: 'Auth', files: ['src/auth/*'] },
+          { id: '002-routes', title: 'Routes', files: ['src/routes/*'] },
+        ],
+      }),
+    });
+
+    // Add a finding to the auth chunk
+    const authChunks = store.getChunks(REVIEW_KEY);
+    const authChunk = authChunks.find((c) => c.slug === '001-auth');
+    await store.addFinding(REVIEW_KEY, {
+      chunkId: authChunk!.id,
+      reviewer: 'claude',
+      file: 'src/auth/session.ts',
+      line: 10,
+      severity: 'critical',
+      message: 'Security issue found',
+    });
+
+    try {
+      // Re-split with keepFindings
+      await splitAndPersist(store, REVIEW_KEY, {
+        strategy: 'plan',
+        plan: JSON.stringify({
+          chunks: [
+            { id: 'new-auth', title: 'New Auth', files: ['src/auth/*'] },
+            { id: 'new-routes', title: 'New Routes', files: ['src/routes/*'] },
+          ],
+        }),
+        keepFindings: true,
+      });
+
+      // Finding should be remapped to new-auth chunk
+      const dbFindings = store.getFindings(REVIEW_KEY);
+      expect(dbFindings.length).toBe(1);
+      expect(dbFindings[0]!.message).toBe('Security issue found');
+      expect(dbFindings[0]!.severity).toBe('critical');
+
+      const newAuthChunk = store.getChunks(REVIEW_KEY).find((c) => c.slug === 'new-auth');
+      expect(newAuthChunk).toBeDefined();
+      expect(dbFindings[0]!.chunkId).toBe(newAuthChunk!.id);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('does not remap findings when keepFindings is not set', async () => {
+    const filePaths = ['src/auth/session.ts'];
+    const { store, cleanup } = await setupReview(filePaths);
+
+    // First split
+    await splitAndPersist(store, REVIEW_KEY, { strategy: 'single-file' });
+
+    // Add a finding
+    const chunks = store.getChunks(REVIEW_KEY);
+    await store.addFinding(REVIEW_KEY, {
+      chunkId: chunks[0]!.id,
+      reviewer: 'claude',
+      file: 'src/auth/session.ts',
+      line: 10,
+      severity: 'critical',
+      message: 'Some issue',
+    });
+
+    try {
+      // Re-split without keepFindings — findings are not remapped
+      await splitAndPersist(store, REVIEW_KEY, { strategy: 'single-file' });
+
+      // Findings should still exist but chunk_id is stale (not remapped)
+      const dbFindings = store.getFindings(REVIEW_KEY);
+      expect(dbFindings.length).toBe(1);
+    } finally {
+      cleanup();
+    }
+  });
+
   // ─── maxTokens passthrough ────────────────────────────────────────────────
 
   it('passes maxTokens through to splitter', async () => {

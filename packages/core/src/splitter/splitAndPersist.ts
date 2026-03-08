@@ -1,6 +1,12 @@
 import type { KaijuStore } from '../store/kaijuStore.js';
-import type { FileEntry } from '../types/index.js';
-import { type SplitOptions, type SplitResultChunk, splitFiles } from './index.js';
+import type { CommentState, FileEntry, FindingRow } from '../types/index.js';
+import {
+  type ChunkAssignment,
+  type SplitOptions,
+  type SplitResultChunk,
+  remapFindings,
+  splitFiles,
+} from './index.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -8,6 +14,8 @@ export interface SplitAndPersistOptions {
   strategy: SplitOptions['strategy'];
   plan?: string;
   maxTokens?: number;
+  /** When true, existing findings are remapped to new chunks after splitting. */
+  keepFindings?: boolean;
 }
 
 export interface SplitAndPersistResult {
@@ -58,6 +66,12 @@ export async function splitAndPersist(
     { strategy: options.strategy, plan: options.plan, maxTokens: options.maxTokens },
   );
 
+  // 3.5. Capture existing findings before clearing old chunks (for keepFindings)
+  const existingFindings = options.keepFindings ? store.getFindings(reviewKey) : [];
+
+  // 3.6. Clear old chunks before persisting new ones (handles re-split)
+  store.deleteChunksForReview(reviewKey);
+
   // 4. Persist each chunk to the store (addChunk writes both SQLite + disk)
   for (const chunk of splitResult.chunks) {
     await store.addChunk(reviewKey, {
@@ -73,6 +87,20 @@ export async function splitAndPersist(
 
   // 5. Assign comments to chunks based on file matching
   assignCommentsToChunks(store, reviewKey, splitResult.chunks);
+
+  // 6. Persist comment files to disk with updated chunk_id
+  await persistCommentFiles(store, reviewKey, splitResult.chunks);
+
+  // 7. Remap findings to new chunks when keepFindings is set
+  if (options.keepFindings && existingFindings.length > 0) {
+    await remapAndPersistFindings(store, reviewKey, existingFindings, splitResult.chunks);
+  }
+
+  // 8. Re-sync chunk meta.json files to include comment info
+  await resyncChunkMetaFiles(store, reviewKey, splitResult.chunks);
+
+  // 9. Final manifest sync to ensure stats are accurate
+  await store.syncManifestPublic(reviewKey);
 
   return { chunks: splitResult.chunks };
 }
@@ -168,4 +196,94 @@ function buildSlugToIdMap(dbChunks: ReturnType<KaijuStore['getChunks']>): Map<st
     map.set(chunk.slug, chunk.id);
   }
   return map;
+}
+
+// ─── Comment Disk Persistence ───────────────────────────────────────────────────
+
+/**
+ * Rewrite comments/*.json files on disk with updated chunk_id after split.
+ * For each comment that has been assigned to a chunk, the on-disk JSON
+ * reflects the chunk slug.
+ */
+async function persistCommentFiles(
+  store: KaijuStore,
+  reviewKey: string,
+  resultChunks: SplitResultChunk[],
+): Promise<void> {
+  const dbComments = store.getComments(reviewKey);
+  if (dbComments.length === 0) return;
+
+  const dbChunks = store.getChunks(reviewKey);
+  const chunkIdToSlug = new Map<number, string>();
+  for (const chunk of dbChunks) {
+    chunkIdToSlug.set(chunk.id, chunk.slug);
+  }
+
+  // Group comments by threadId to write one file per thread
+  const threadMap = new Map<string, typeof dbComments>();
+  for (const comment of dbComments) {
+    const existing = threadMap.get(comment.threadId) ?? [];
+    existing.push(comment);
+    threadMap.set(comment.threadId, existing);
+  }
+
+  for (const [threadId, threadComments] of threadMap) {
+    const first = threadComments[0]!;
+    const chunkSlug = first.chunkId != null ? (chunkIdToSlug.get(first.chunkId) ?? null) : null;
+
+    await store.writeCommentFilePublic(reviewKey, threadId, {
+      thread_id: threadId,
+      source: first.source,
+      state: first.state as CommentState,
+      chunk_id: chunkSlug,
+      file: first.file ?? null,
+      line: first.line ?? null,
+      messages: threadComments.map((c) => ({
+        author: c.author ?? '',
+        body: c.body,
+        timestamp: c.timestamp ?? '',
+        ...(c.ghCommentId ? { gh_comment_id: c.ghCommentId } : {}),
+      })),
+    });
+  }
+}
+
+// ─── Finding Remapping ──────────────────────────────────────────────────────────
+
+/**
+ * Remap existing findings to new chunks and persist the updated chunk_id.
+ */
+async function remapAndPersistFindings(
+  store: KaijuStore,
+  reviewKey: string,
+  existingFindings: ReturnType<KaijuStore['getFindings']>,
+  resultChunks: SplitResultChunk[],
+): Promise<void> {
+  const remapped = remapFindings(
+    existingFindings as unknown as FindingRow[],
+    resultChunks as ChunkAssignment[],
+  );
+  const dbChunks = store.getChunks(reviewKey);
+  const slugToId = buildSlugToIdMap(dbChunks);
+
+  for (const remap of remapped) {
+    const newChunkId = remap.newChunkSlug ? (slugToId.get(remap.newChunkSlug) ?? null) : null;
+    store.updateFindingChunkId(remap.findingId, newChunkId);
+  }
+}
+
+// ─── Chunk Meta Re-sync ─────────────────────────────────────────────────────────
+
+/**
+ * Re-sync chunk .meta.json files to include comment thread IDs and finding IDs.
+ * Called after comment assignment so that meta files reflect the final state.
+ */
+async function resyncChunkMetaFiles(
+  store: KaijuStore,
+  reviewKey: string,
+  resultChunks: SplitResultChunk[],
+): Promise<void> {
+  for (const chunk of resultChunks) {
+    await store.resyncChunkMeta(reviewKey, chunk.id);
+  }
 }
