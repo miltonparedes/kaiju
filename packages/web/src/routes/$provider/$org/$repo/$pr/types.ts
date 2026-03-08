@@ -62,10 +62,28 @@ export interface DashboardFile {
   chunkId: number | null;
 }
 
+/** Comment shape as returned by the server getComments function (Drizzle select). */
+export interface DashboardComment {
+  id: number;
+  reviewId: number;
+  threadId: string;
+  source: string;
+  state: string;
+  chunkId: number | null;
+  file: string | null;
+  line: number | null;
+  body: string;
+  author: string | null;
+  timestamp: string | null;
+  ghCommentId: number | null;
+  createdAt: number;
+}
+
 /** Data returned by the PR view page loader. */
 export interface PRLoaderData {
   review: DashboardReview;
   chunks: DashboardChunk[];
   findings: DashboardFinding[];
   files: DashboardFile[];
+  comments: DashboardComment[];
 }

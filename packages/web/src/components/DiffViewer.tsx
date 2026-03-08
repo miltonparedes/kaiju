@@ -1,34 +1,48 @@
 'use client';
 
+import type { SelectedLineRange } from '@pierre/diffs';
 import { type PatchDiffProps, PatchDiff, WorkerPoolContextProvider } from '@pierre/diffs/react';
 import WorkerUrl from '@pierre/diffs/worker/worker.js?worker&url';
 import { Columns2, Rows3 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 import { ScrollArea } from '@/components/ui/scroll-area.js';
 import { Toggle } from '@/components/ui/toggle.js';
 import { cn } from '@/lib/utils.js';
 
-import type { DashboardChunk } from '../routes/$provider/$org/$repo/$pr/types.js';
+import type {
+  DashboardChunk,
+  DashboardComment,
+  DashboardFinding,
+} from '../routes/$provider/$org/$repo/$pr/types.js';
+import { AnnotationRenderer } from './AnnotationRenderer.js';
 import { filePathToId, splitPatchByFile } from './diffViewerUtils.js';
+import type { AnnotationMeta, KaijuAnnotation } from './findingsCommentsUtils.js';
+import { buildFileAnnotations } from './findingsCommentsUtils.js';
+import { LineSelectionBar } from './LineSelectionBar.js';
 
 /** Extract the options type from PatchDiffProps for reuse. */
-type DiffOptions = NonNullable<PatchDiffProps<undefined>['options']>;
+type DiffOptions = NonNullable<PatchDiffProps<AnnotationMeta>['options']>;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface DiffViewerProps {
   chunks: DashboardChunk[];
+  findings?: DashboardFinding[];
+  comments?: DashboardComment[];
+  expandedFindingId?: number | null;
 }
 
 type DiffStyle = 'split' | 'unified';
 
+/** Line selection state with the file context. */
+interface FileLineSelection {
+  filePath: string;
+  range: SelectedLineRange;
+}
+
 // ─── Worker Pool wrapper ──────────────────────────────────────────────────────
 
-/**
- * Wraps children with the @pierre/diffs WorkerPoolContextProvider.
- * Uses the pierre-dark theme and word-alt line diff type for async highlighting.
- */
 function DiffWorkerProvider({ children }: { children: React.ReactNode }) {
   return (
     <WorkerPoolContextProvider
@@ -68,16 +82,55 @@ function SingleFileDiff({
   filePath,
   patch,
   options,
+  findings,
+  comments,
+  expandedFindingId,
+  onLineSelected,
 }: {
   filePath: string;
   patch: string;
   options: DiffOptions;
+  findings: DashboardFinding[];
+  comments: DashboardComment[];
+  expandedFindingId?: number | null;
+  onLineSelected?: (range: SelectedLineRange | null, filePath: string) => void;
 }) {
+  const annotations = useMemo(
+    () => buildFileAnnotations(findings, comments, filePath),
+    [findings, comments, filePath],
+  );
+
+  const handleLineSelected = useCallback(
+    (range: SelectedLineRange | null) => {
+      onLineSelected?.(range, filePath);
+    },
+    [onLineSelected, filePath],
+  );
+
+  const fileOptions = useMemo<DiffOptions>(
+    () => ({
+      ...options,
+      enableLineSelection: true,
+      onLineSelected: handleLineSelected,
+    }),
+    [options, handleLineSelected],
+  );
+
   return (
     <div id={filePathToId(filePath)} className="border-b border-border last:border-b-0">
       <StickyFileHeader filePath={filePath} />
       <div className="overflow-x-auto">
-        <PatchDiff patch={patch} options={options} />
+        <PatchDiff
+          patch={patch}
+          options={fileOptions}
+          lineAnnotations={annotations}
+          renderAnnotation={(annotation: KaijuAnnotation) => (
+            <AnnotationRenderer
+              metadata={annotation.metadata}
+              expandedFindingId={expandedFindingId}
+            />
+          )}
+        />
       </div>
     </div>
   );
@@ -85,7 +138,21 @@ function SingleFileDiff({
 
 // ─── Chunk Section ────────────────────────────────────────────────────────────
 
-function ChunkSection({ chunk, options }: { chunk: DashboardChunk; options: DiffOptions }) {
+function ChunkSection({
+  chunk,
+  options,
+  findings,
+  comments,
+  expandedFindingId,
+  onLineSelected,
+}: {
+  chunk: DashboardChunk;
+  options: DiffOptions;
+  findings: DashboardFinding[];
+  comments: DashboardComment[];
+  expandedFindingId?: number | null;
+  onLineSelected?: (range: SelectedLineRange | null, filePath: string) => void;
+}) {
   const filePatches = useMemo(() => {
     if (!chunk.patch) {
       return [];
@@ -109,6 +176,10 @@ function ChunkSection({ chunk, options }: { chunk: DashboardChunk; options: Diff
           filePath={fp.filePath}
           patch={fp.patch}
           options={options}
+          findings={findings}
+          comments={comments}
+          expandedFindingId={expandedFindingId}
+          onLineSelected={onLineSelected}
         />
       ))}
     </div>
@@ -117,8 +188,14 @@ function ChunkSection({ chunk, options }: { chunk: DashboardChunk; options: Diff
 
 // ─── DiffViewer (main export) ─────────────────────────────────────────────────
 
-export function DiffViewer({ chunks }: DiffViewerProps) {
+export function DiffViewer({
+  chunks,
+  findings = [],
+  comments = [],
+  expandedFindingId,
+}: DiffViewerProps) {
   const [diffStyle, setDiffStyle] = useState<DiffStyle>('split');
+  const [lineSelection, setLineSelection] = useState<FileLineSelection | null>(null);
 
   const diffOptions = useMemo<DiffOptions>(
     () => ({
@@ -131,6 +208,23 @@ export function DiffViewer({ chunks }: DiffViewerProps) {
     }),
     [diffStyle],
   );
+
+  const handleLineSelected = useCallback((range: SelectedLineRange | null, filePath: string) => {
+    if (range) {
+      setLineSelection({ filePath, range });
+    } else {
+      setLineSelection(null);
+    }
+  }, []);
+
+  const handleCreateFinding = useCallback((_selection: SelectedLineRange, _filePath: string) => {
+    // TODO: open finding creation form / send to agent
+    setLineSelection(null);
+  }, []);
+
+  const handleDismissSelection = useCallback(() => {
+    setLineSelection(null);
+  }, []);
 
   const hasPatches = chunks.some((c) => c.patch);
 
@@ -196,7 +290,14 @@ export function DiffViewer({ chunks }: DiffViewerProps) {
                         </span>
                       ) : null}
                     </div>
-                    <ChunkSection chunk={chunk} options={diffOptions} />
+                    <ChunkSection
+                      chunk={chunk}
+                      options={diffOptions}
+                      findings={findings}
+                      comments={comments}
+                      expandedFindingId={expandedFindingId}
+                      onLineSelected={handleLineSelected}
+                    />
                   </div>
                 ) : null,
               )}
@@ -204,6 +305,16 @@ export function DiffViewer({ chunks }: DiffViewerProps) {
           </DiffWorkerProvider>
         )}
       </ScrollArea>
+
+      {/* Line selection bar */}
+      {lineSelection ? (
+        <LineSelectionBar
+          selection={lineSelection.range}
+          filePath={lineSelection.filePath}
+          onCreateFinding={handleCreateFinding}
+          onDismiss={handleDismissSelection}
+        />
+      ) : null}
     </div>
   );
 }

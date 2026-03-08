@@ -6,26 +6,35 @@ import { DiffViewer } from '@/components/DiffViewer.js';
 import { ReviewSummary } from '@/components/ReviewSummary.js';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable.js';
 import { getChunks } from '@/server/chunks.js';
+import { getComments } from '@/server/comments.js';
 import { getFiles } from '@/server/files.js';
 import { getFindings } from '@/server/findings.js';
 import { getReview } from '@/server/reviews.js';
 
-import type { DashboardChunk, DashboardFile, DashboardFinding, PRLoaderData } from './types.js';
+import type {
+  DashboardChunk,
+  DashboardComment,
+  DashboardFile,
+  DashboardFinding,
+  PRLoaderData,
+} from './types.js';
 
 export const Route = createFileRoute('/$provider/$org/$repo/$pr/')({
   loader: async ({ params }): Promise<PRLoaderData> => {
     const reviewKey = `${params.provider}/${params.org}/${params.repo}/${params.pr}`;
-    const [review, chunks, findings, files] = await Promise.all([
+    const [review, chunks, findings, files, comments] = await Promise.all([
       getReview({ data: { key: reviewKey } }),
       getChunks({ data: { reviewKey } }),
       getFindings({ data: { reviewKey } }),
       getFiles({ data: { reviewKey } }),
+      getComments({ data: { reviewKey } }),
     ]);
     return {
       review,
       chunks: chunks as DashboardChunk[],
       findings: findings as DashboardFinding[],
       files: files as DashboardFile[],
+      comments: comments as DashboardComment[],
     };
   },
   component: PRViewPage,
@@ -34,7 +43,7 @@ export const Route = createFileRoute('/$provider/$org/$repo/$pr/')({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 function PRViewPage() {
-  const { review, chunks, findings, files } = Route.useLoaderData();
+  const { review, chunks, findings, files, comments } = Route.useLoaderData();
 
   const handleFileClick = useCallback((filePath: string) => {
     // Scroll center diff viewer to the file's section
@@ -76,7 +85,7 @@ function PRViewPage() {
 
         {/* Center panel: Diff Viewer */}
         <ResizablePanel defaultSize="55%" minSize="30%">
-          <DiffViewer chunks={chunks} />
+          <DiffViewer chunks={chunks} findings={findings} comments={comments} />
         </ResizablePanel>
 
         <ResizableHandle withHandle />
