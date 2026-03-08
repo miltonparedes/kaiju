@@ -5,7 +5,12 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import type { ChunkMetaJson, CommentFileJson, ManifestJson } from '../store/fileTypes.js';
+import type {
+  ChunkMetaJson,
+  CommentFileJson,
+  FindingFileJson,
+  ManifestJson,
+} from '../store/fileTypes.js';
 import { createDB } from '../store/index.js';
 import { KaijuStore } from '../store/kaijuStore.js';
 import { splitAndPersist } from './splitAndPersist.js';
@@ -484,5 +489,126 @@ describe('VAL-SPLIT-010: invalid plan JSON produces clear error', () => {
     // Verify no side effects in SQLite
     const dbChunks = store.getChunks(REVIEW_KEY);
     expect(dbChunks.length).toBe(0);
+  });
+});
+
+// ─── VAL-SPLIT-011: --keep-findings disk sync ──────────────────────────────
+
+describe('VAL-SPLIT-011: --keep-findings disk persistence', () => {
+  it('findings/*.json files reflect updated chunk_id after re-split', async () => {
+    const filePaths = ['src/auth/session.ts', 'src/routes/api.ts'];
+    await createTestReview(filePaths);
+
+    // First split
+    await splitAndPersist(store, REVIEW_KEY, {
+      strategy: 'plan',
+      plan: JSON.stringify({
+        chunks: [
+          { id: '001-auth', title: 'Auth', files: ['src/auth/*'] },
+          { id: '002-routes', title: 'Routes', files: ['src/routes/*'] },
+        ],
+      }),
+    });
+
+    // Add a finding to the auth chunk
+    const authChunk = store.getChunks(REVIEW_KEY).find((c) => c.slug === '001-auth');
+    await store.addFinding(REVIEW_KEY, {
+      chunkId: authChunk!.id,
+      reviewer: 'claude',
+      file: 'src/auth/session.ts',
+      line: 10,
+      severity: 'critical',
+      message: 'Security issue found',
+    });
+
+    // Re-split with keepFindings
+    await splitAndPersist(store, REVIEW_KEY, {
+      strategy: 'plan',
+      plan: JSON.stringify({
+        chunks: [
+          { id: 'new-auth', title: 'New Auth', files: ['src/auth/*'] },
+          { id: 'new-routes', title: 'New Routes', files: ['src/routes/*'] },
+        ],
+      }),
+      keepFindings: true,
+    });
+
+    // Read the finding file from disk
+    const findingsDir = join(reviewDir(), 'findings');
+    const findingPath = join(findingsDir, 'finding-001.json');
+    expect(existsSync(findingPath)).toBe(true);
+
+    const findingFile: FindingFileJson = JSON.parse(await readFile(findingPath, 'utf-8'));
+    // After re-split, the on-disk chunk_id should reflect the NEW chunk slug
+    expect(findingFile.chunk_id).toBe('new-auth');
+  });
+
+  it('disk and SQLite finding chunk_id values match after re-split', async () => {
+    const filePaths = ['src/auth/session.ts', 'src/routes/api.ts'];
+    await createTestReview(filePaths);
+
+    // First split
+    await splitAndPersist(store, REVIEW_KEY, {
+      strategy: 'plan',
+      plan: JSON.stringify({
+        chunks: [
+          { id: '001-auth', title: 'Auth', files: ['src/auth/*'] },
+          { id: '002-routes', title: 'Routes', files: ['src/routes/*'] },
+        ],
+      }),
+    });
+
+    // Add findings to both chunks
+    const chunks = store.getChunks(REVIEW_KEY);
+    const authChunk = chunks.find((c) => c.slug === '001-auth')!;
+    const routesChunk = chunks.find((c) => c.slug === '002-routes')!;
+
+    await store.addFinding(REVIEW_KEY, {
+      chunkId: authChunk.id,
+      reviewer: 'claude',
+      file: 'src/auth/session.ts',
+      line: 10,
+      severity: 'critical',
+      message: 'Auth issue',
+    });
+
+    await store.addFinding(REVIEW_KEY, {
+      chunkId: routesChunk.id,
+      reviewer: 'claude',
+      file: 'src/routes/api.ts',
+      line: 20,
+      severity: 'suggestion',
+      message: 'Route issue',
+    });
+
+    // Re-split with keepFindings
+    await splitAndPersist(store, REVIEW_KEY, {
+      strategy: 'plan',
+      plan: JSON.stringify({
+        chunks: [
+          { id: 'chunk-a', title: 'Chunk A', files: ['src/auth/*'] },
+          { id: 'chunk-b', title: 'Chunk B', files: ['src/routes/*'] },
+        ],
+      }),
+      keepFindings: true,
+    });
+
+    // Check dual-layer consistency for each finding
+    const dbFindings = store.getFindings(REVIEW_KEY);
+    const newChunks = store.getChunks(REVIEW_KEY);
+    const chunkIdToSlug = new Map<number, string>();
+    for (const c of newChunks) {
+      chunkIdToSlug.set(c.id, c.slug);
+    }
+
+    for (const finding of dbFindings) {
+      const findingFileId = `finding-${String(finding.id).padStart(3, '0')}`;
+      const findingPath = join(reviewDir(), 'findings', `${findingFileId}.json`);
+      const diskFinding: FindingFileJson = JSON.parse(await readFile(findingPath, 'utf-8'));
+
+      // SQLite chunk_id (numeric) should resolve to the same slug as on-disk chunk_id (string)
+      const sqliteSlug = finding.chunkId != null ? chunkIdToSlug.get(finding.chunkId) : null;
+      expect(diskFinding.chunk_id).toBe(sqliteSlug);
+    }
   });
 });

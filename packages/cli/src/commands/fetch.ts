@@ -107,7 +107,10 @@ function createStore(): KaijuStore {
 export const fetchCommand = new Command('fetch')
   .description('Fetch a pull request for analysis')
   .argument('[pr-ref]', 'PR reference: org/repo#N or GitHub URL')
-  .option('-b, --branch <branch>', 'Fetch diff from a local branch (compares with current branch)')
+  .option(
+    '-b, --branch <branch>',
+    'Fetch diff from a local branch (compare against default branch)',
+  )
   .option('-d, --diff <path>', 'Ingest a local patch/diff file')
   .option('--json', 'Output as JSON')
   .action(

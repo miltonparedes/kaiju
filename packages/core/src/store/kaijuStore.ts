@@ -107,7 +107,7 @@ export interface CreateFindingInput {
 export class KaijuStore {
   constructor(
     private readonly db: KaijuDB,
-    private readonly baseDir: string,
+    readonly baseDir: string,
   ) {}
 
   // ─── Review CRUD ────────────────────────────────────────────────────────────

@@ -21,6 +21,11 @@ describe('fetch command', () => {
     expect(fetchCommand.options.some((o) => o.long === '--branch')).toBe(true);
   });
 
+  it('--branch help text describes default branch comparison', () => {
+    const branchOpt = fetchCommand.options.find((o) => o.long === '--branch');
+    expect(branchOpt?.description).toContain('default branch');
+  });
+
   it('has a --diff option', () => {
     expect(fetchCommand.options.some((o) => o.long === '--diff')).toBe(true);
   });

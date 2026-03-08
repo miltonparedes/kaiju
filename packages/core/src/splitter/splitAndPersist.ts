@@ -1,3 +1,4 @@
+import { getReviewDir, readFindingFile, writeFindingFile } from '../store/fileIO.js';
 import type { KaijuStore } from '../store/kaijuStore.js';
 import type { CommentState, FileEntry, FindingRow } from '../types/index.js';
 import {
@@ -253,7 +254,8 @@ async function persistCommentFiles(
 // ─── Finding Remapping ──────────────────────────────────────────────────────────
 
 /**
- * Remap existing findings to new chunks and persist the updated chunk_id.
+ * Remap existing findings to new chunks and persist the updated chunk_id
+ * in BOTH SQLite and on-disk findings/*.json files (dual-layer consistency).
  */
 async function remapAndPersistFindings(
   store: KaijuStore,
@@ -267,10 +269,23 @@ async function remapAndPersistFindings(
   );
   const dbChunks = store.getChunks(reviewKey);
   const slugToId = buildSlugToIdMap(dbChunks);
+  const reviewDir = getReviewDir(reviewKey, store.baseDir);
 
   for (const remap of remapped) {
     const newChunkId = remap.newChunkSlug ? (slugToId.get(remap.newChunkSlug) ?? null) : null;
+
+    // Update SQLite layer
     store.updateFindingChunkId(remap.findingId, newChunkId);
+
+    // Update disk layer — rewrite findings/*.json with new chunk_id
+    const findingFileId = `finding-${String(remap.findingId).padStart(3, '0')}`;
+    try {
+      const findingFile = await readFindingFile(reviewDir, findingFileId);
+      findingFile.chunk_id = remap.newChunkSlug ?? null;
+      await writeFindingFile(reviewDir, findingFileId, findingFile);
+    } catch {
+      // Finding file may not exist if it was created externally; skip silently
+    }
   }
 }
 
