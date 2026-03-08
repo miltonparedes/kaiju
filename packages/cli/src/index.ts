@@ -5,6 +5,7 @@ import { catCommand } from './commands/cat.js';
 import { fetchCommand } from './commands/fetch.js';
 import { filesCommand } from './commands/files.js';
 import { lsCommand } from './commands/ls.js';
+import { reviewCommand } from './commands/review.js';
 import { showCommand } from './commands/show.js';
 import { splitCommand } from './commands/split.js';
 import { statusCommand } from './commands/status.js';
@@ -19,6 +20,7 @@ program.addCommand(splitCommand);
 program.addCommand(catCommand);
 program.addCommand(statusCommand);
 program.addCommand(lsCommand);
+program.addCommand(reviewCommand);
 program.addCommand(showCommand);
 
 program.parse();
