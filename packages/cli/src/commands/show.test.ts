@@ -91,4 +91,22 @@ describe('buildReviewUrl', () => {
       'http://localhost:3456/github/org/repo/7',
     );
   });
+
+  it('returns URL for local branch review key', () => {
+    expect(buildReviewUrl(base, 'local/local/local-branch/123456')).toBe(
+      'http://localhost:1954/local/local/local-branch/123456',
+    );
+  });
+
+  it('returns URL for local patch review key', () => {
+    expect(buildReviewUrl(base, 'local/local/patch/1709000000')).toBe(
+      'http://localhost:1954/local/local/patch/1709000000',
+    );
+  });
+
+  it('returns URL for github review key', () => {
+    expect(buildReviewUrl(base, 'github/acme/widgets/42')).toBe(
+      'http://localhost:1954/github/acme/widgets/42',
+    );
+  });
 });

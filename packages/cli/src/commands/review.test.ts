@@ -11,11 +11,11 @@ describe('review command', () => {
     expect(reviewCommand.description()).toBeTruthy();
   });
 
-  it('accepts a required pr-ref argument', () => {
+  it('accepts an optional pr-ref argument', () => {
     const args = reviewCommand.registeredArguments;
     expect(args.length).toBeGreaterThanOrEqual(1);
     expect(args[0]!.name()).toBe('pr-ref');
-    expect(args[0]!.required).toBe(true);
+    expect(args[0]!.required).toBe(false);
   });
 
   it('has a --port option with default 1954', () => {
@@ -30,5 +30,13 @@ describe('review command', () => {
 
   it('has a --strategy option', () => {
     expect(reviewCommand.options.some((o) => o.long === '--strategy')).toBe(true);
+  });
+
+  it('has a --branch option', () => {
+    expect(reviewCommand.options.some((o) => o.long === '--branch')).toBe(true);
+  });
+
+  it('has a --diff option', () => {
+    expect(reviewCommand.options.some((o) => o.long === '--diff')).toBe(true);
   });
 });

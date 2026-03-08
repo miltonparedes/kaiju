@@ -91,12 +91,18 @@ export async function waitForServer(url: string, timeoutMs: number = 15000): Pro
  * Build the concrete review URL for a given PR reference.
  * Returns the base URL if prRef is undefined or unparseable.
  */
-export function buildReviewUrl(baseUrl: string, prRef?: string): string {
-  if (!prRef) {
+export function buildReviewUrl(baseUrl: string, ref?: string): string {
+  if (!ref) {
     return baseUrl;
   }
+  // Review key: "local/local/local-branch/123" or "github/org/repo/42"
+  const segments = ref.split('/');
+  if (segments.length === 4 && !ref.includes('#') && !ref.startsWith('http')) {
+    return `${baseUrl}/${ref}`;
+  }
+  // Fallback: GitHub PR ref (shorthand or URL)
   try {
-    const parsed = parsePRReference(prRef);
+    const parsed = parsePRReference(ref);
     return `${baseUrl}/github/${parsed.owner}/${parsed.repo}/${parsed.pr}`;
   } catch {
     return baseUrl;
