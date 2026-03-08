@@ -17,10 +17,18 @@ describe('cat command', () => {
     expect(catCommand.description()).toBeTruthy();
   });
 
-  it('accepts a chunk-id argument', () => {
+  it('accepts a required first argument (chunk-id or pr-ref)', () => {
     const args = catCommand.registeredArguments;
     expect(args.length).toBeGreaterThanOrEqual(1);
-    expect(args[0]!.name()).toBe('chunk-id');
+    expect(args[0]!.name()).toBe('chunk-id-or-pr-ref');
+    expect(args[0]!.required).toBe(true);
+  });
+
+  it('accepts an optional second argument (chunk-id when pr-ref is first)', () => {
+    const args = catCommand.registeredArguments;
+    expect(args.length).toBeGreaterThanOrEqual(2);
+    expect(args[1]!.name()).toBe('chunk-id');
+    expect(args[1]!.required).toBe(false);
   });
 
   it('has a --json option', () => {

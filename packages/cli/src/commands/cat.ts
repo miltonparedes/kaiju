@@ -150,16 +150,27 @@ export function formatCatJson(data: CatDisplayData): string {
 
 export const catCommand = new Command('cat')
   .description('Display a chunk diff with header and metadata')
-  .argument('<chunk-id>', 'Chunk ID to display')
-  .argument('[pr-ref]', 'PR reference: org/repo#N (optional, uses latest if omitted)')
+  .argument('<chunk-id-or-pr-ref>', 'Chunk ID, or PR reference (org/repo#N) when followed by chunk')
+  .argument('[chunk-id]', 'Chunk ID when first argument is a PR reference')
   .option('--json', 'Output as structured JSON')
   .option('--meta', 'Show metadata only, without diff body')
   .action(
     async (
-      chunkId: string,
-      prRef: string | undefined,
+      firstArg: string,
+      secondArg: string | undefined,
       options: { json?: boolean; meta?: boolean },
     ) => {
+      // Resolve argument order: when two args are given, first is pr-ref, second is chunk-id.
+      // When one arg is given, it's the chunk-id with no explicit pr-ref.
+      let chunkId: string;
+      let prRef: string | undefined;
+      if (secondArg) {
+        prRef = firstArg;
+        chunkId = secondArg;
+      } else {
+        chunkId = firstArg;
+        prRef = undefined;
+      }
       const store = createStore();
 
       try {

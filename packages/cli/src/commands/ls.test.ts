@@ -130,6 +130,25 @@ describe('formatLsChunksJson', () => {
     expect(parsed.chunks[0].estimatedTokens).toBe(800);
     expect(parsed.chunks[0].status).toBe('reviewed');
   });
+
+  it('includes absolute paths when reviewDir is provided', () => {
+    const reviewDir = '/home/user/.kaiju/reviews/github/org/repo/9999';
+    const parsed = JSON.parse(formatLsChunksJson(sampleChunks, reviewDir));
+    expect(parsed.paths).toBeDefined();
+    expect(parsed.paths.reviewDir).toBe(reviewDir);
+    expect(parsed.paths.chunks).toContain('chunks/');
+    // Each chunk should have patch and meta paths
+    expect(parsed.chunks[0].paths.patch).toContain('001-auth.patch');
+    expect(parsed.chunks[0].paths.meta).toContain('001-auth.meta.json');
+    expect(parsed.chunks[1].paths.patch).toContain('002-api.patch');
+    expect(parsed.chunks[1].paths.meta).toContain('002-api.meta.json');
+  });
+
+  it('omits paths when reviewDir is not provided', () => {
+    const parsed = JSON.parse(formatLsChunksJson(sampleChunks));
+    expect(parsed.paths).toBeUndefined();
+    expect(parsed.chunks[0].paths).toBeUndefined();
+  });
 });
 
 describe('formatLsAllTable', () => {
@@ -235,5 +254,19 @@ describe('formatLsAllJson', () => {
     expect(parsed.reviews[0].reviewedCount).toBe(2);
     expect(parsed.reviews[0].fileCount).toBe(87);
     expect(parsed.reviews[0].status).toBe('split');
+  });
+
+  it('includes absolute paths when baseDir is provided', () => {
+    const baseDir = '/home/user/.kaiju';
+    const parsed = JSON.parse(formatLsAllJson(sampleEntries, baseDir));
+    expect(parsed.reviews[0].paths).toBeDefined();
+    expect(parsed.reviews[0].paths.reviewDir).toBe(
+      '/home/user/.kaiju/reviews/github/org/repo/9999',
+    );
+  });
+
+  it('omits paths when baseDir is not provided', () => {
+    const parsed = JSON.parse(formatLsAllJson(sampleEntries));
+    expect(parsed.reviews[0].paths).toBeUndefined();
   });
 });

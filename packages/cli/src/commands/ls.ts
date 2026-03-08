@@ -1,3 +1,7 @@
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+
+import { getReviewDir } from '@kaiju/core';
 import { Command } from 'commander';
 
 import { createStore, resolveReviewKey } from './shared.js';
@@ -63,8 +67,9 @@ export function formatLsChunksTable(entries: LsChunkEntry[]): string {
 
 /**
  * Format chunks as JSON for agent consumption.
+ * Includes absolute paths to review directory and chunk files when reviewDir is provided.
  */
-export function formatLsChunksJson(entries: LsChunkEntry[]): string {
+export function formatLsChunksJson(entries: LsChunkEntry[], reviewDir?: string): string {
   return JSON.stringify(
     {
       totalChunks: entries.length,
@@ -74,7 +79,23 @@ export function formatLsChunksJson(entries: LsChunkEntry[]): string {
         deletions: c.deletions,
         estimatedTokens: c.estimatedTokens,
         status: c.status,
+        ...(reviewDir
+          ? {
+              paths: {
+                patch: join(reviewDir, 'chunks', `${c.id}.patch`),
+                meta: join(reviewDir, 'chunks', `${c.id}.meta.json`),
+              },
+            }
+          : {}),
       })),
+      ...(reviewDir
+        ? {
+            paths: {
+              reviewDir,
+              chunks: join(reviewDir, 'chunks/'),
+            },
+          }
+        : {}),
     },
     null,
     2,
@@ -113,8 +134,9 @@ export function formatLsAllTable(entries: LsAllEntry[]): string {
 
 /**
  * Format all reviews as JSON for agent consumption.
+ * Includes absolute paths to review directories when baseDir is provided.
  */
-export function formatLsAllJson(entries: LsAllEntry[]): string {
+export function formatLsAllJson(entries: LsAllEntry[], baseDir?: string): string {
   return JSON.stringify(
     {
       totalReviews: entries.length,
@@ -126,6 +148,13 @@ export function formatLsAllJson(entries: LsAllEntry[]): string {
         reviewedCount: e.reviewedCount,
         fileCount: e.fileCount,
         status: e.status,
+        ...(baseDir
+          ? {
+              paths: {
+                reviewDir: getReviewDir(e.key, baseDir),
+              },
+            }
+          : {}),
       })),
     },
     null,
@@ -166,7 +195,8 @@ export const lsCommand = new Command('ls')
         });
 
         if (options.json) {
-          console.log(formatLsAllJson(entries));
+          const baseDir = join(homedir(), '.kaiju');
+          console.log(formatLsAllJson(entries, baseDir));
         } else {
           console.log(formatLsAllTable(entries));
         }
@@ -207,7 +237,9 @@ export const lsCommand = new Command('ls')
         });
 
         if (options.json) {
-          console.log(formatLsChunksJson(chunkEntries));
+          const baseDir = join(homedir(), '.kaiju');
+          const reviewDir = getReviewDir(reviewKey, baseDir);
+          console.log(formatLsChunksJson(chunkEntries, reviewDir));
         } else {
           console.log(formatLsChunksTable(chunkEntries));
         }
