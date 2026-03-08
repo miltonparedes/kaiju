@@ -1,7 +1,7 @@
 'use client';
 
 import { Bot, CheckCircle2, ChevronDown, ChevronRight, MessageSquare, User } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge.js';
 import { Button } from '@/components/ui/button.js';
@@ -52,6 +52,11 @@ export function FindingAnnotation({ finding, defaultExpanded = false }: FindingA
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [agentPrompt, setAgentPrompt] = useState('');
   const style = getSeverityStyle(finding.severity);
+
+  // Sync expanded state when defaultExpanded changes (e.g. via n/p navigation)
+  useEffect(() => {
+    setExpanded(defaultExpanded);
+  }, [defaultExpanded]);
 
   const handleToggle = useCallback(() => {
     setExpanded((prev) => !prev);

@@ -2,6 +2,7 @@ import { Link, createFileRoute, useRouter } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ChunkNavigator } from '@/components/ChunkNavigator.js';
+import { sortChunksByPriority } from '@/components/chunkNavigatorUtils.js';
 import type { DiffStyle } from '@/components/DiffViewer.js';
 import { DiffViewer } from '@/components/DiffViewer.js';
 import { ReviewSummary } from '@/components/ReviewSummary.js';
@@ -46,13 +47,19 @@ export const Route = createFileRoute('/$provider/$org/$repo/$pr/chunk/$chunkId')
       getComments({ data: { reviewKey } }),
     ]);
 
-    // Find the index of the target chunk
-    const chunkIndex = chunks.findIndex((c: DashboardChunk) => c.slug === params.chunkId);
+    const typedChunks = chunks as DashboardChunk[];
+    const typedFindings = findings as DashboardFinding[];
+
+    // Sort chunks the same way the UI does so the deep-link index is correct
+    const sortedChunks = sortChunksByPriority(typedChunks, typedFindings);
+
+    // Find the index of the target chunk in the sorted order
+    const chunkIndex = sortedChunks.findIndex((c) => c.slug === params.chunkId);
 
     return {
       review: review as DashboardReview,
-      chunks: chunks as DashboardChunk[],
-      findings: findings as DashboardFinding[],
+      chunks: sortedChunks,
+      findings: typedFindings,
       files: files as DashboardFile[],
       comments: comments as DashboardComment[],
       initialChunkIndex: chunkIndex >= 0 ? chunkIndex : 0,
@@ -89,6 +96,7 @@ function ChunkDeepLinkPage() {
 
   // ─── Derived data ─────────────────────────────────────────────────────────
 
+  /** Chunks already sorted by loader; apply locally-updated reviewed status. */
   const effectiveChunks = useMemo<DashboardChunk[]>(
     () => chunks.map((c) => (reviewedSlugs.has(c.slug) ? { ...c, status: 'reviewed' } : c)),
     [chunks, reviewedSlugs],

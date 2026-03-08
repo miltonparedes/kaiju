@@ -20,7 +20,7 @@ import type {
 import {
   SEVERITY_COLORS,
   SEVERITY_LABELS,
-  buildSortedChunks,
+  buildChunkStats,
   countBySeverity,
 } from './chunkNavigatorUtils.js';
 import type { ChunkWithStats } from './chunkNavigatorUtils.js';
@@ -204,7 +204,7 @@ export function ChunkNavigator({
   activeChunkIndex,
   onChunkClick,
 }: ChunkNavigatorProps) {
-  const sortedChunks = buildSortedChunks(chunks, findings, files);
+  const chunkStats = buildChunkStats(chunks, findings, files);
 
   const handleFileClick = useCallback(
     (filePath: string) => {
@@ -235,13 +235,13 @@ export function ChunkNavigator({
       </div>
       <ScrollArea className="flex-1">
         <div className="p-2">
-          {sortedChunks.length === 0 ? (
+          {chunkStats.length === 0 ? (
             <p className="px-2 py-4 text-center text-sm text-muted-foreground">
               No chunks yet. Run <code className="text-primary">kaiju split</code> first.
             </p>
           ) : (
             <ul className="space-y-1">
-              {sortedChunks.map((data, i) => (
+              {chunkStats.map((data, i) => (
                 <ChunkItem
                   key={data.chunk.slug}
                   data={data}

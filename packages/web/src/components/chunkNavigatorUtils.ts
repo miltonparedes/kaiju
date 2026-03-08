@@ -43,8 +43,42 @@ export function countBySeverity(findings: DashboardFinding[]): Record<string, nu
   return counts;
 }
 
-/** Build enriched chunk data sorted by priority (critical findings first). */
-export function buildSortedChunks(
+/**
+ * Sort chunks by priority: critical findings first, then by reviewPriority, then by slug.
+ * This must be called at the route level so all components share the same order.
+ */
+export function sortChunksByPriority(
+  chunks: DashboardChunk[],
+  findings: DashboardFinding[],
+): DashboardChunk[] {
+  // Build a lookup: chunkId → count of critical findings
+  const criticalCounts = new Map<number, number>();
+  for (const f of findings) {
+    if (f.chunkId != null && f.severity === 'critical') {
+      criticalCounts.set(f.chunkId, (criticalCounts.get(f.chunkId) ?? 0) + 1);
+    }
+  }
+
+  return chunks.toSorted((a, b) => {
+    const aCrit = criticalCounts.get(a.id) ?? 0;
+    const bCrit = criticalCounts.get(b.id) ?? 0;
+    if (aCrit !== bCrit) {
+      return bCrit - aCrit;
+    }
+    const aPrio = PRIORITY_ORDER[a.reviewPriority] ?? 1;
+    const bPrio = PRIORITY_ORDER[b.reviewPriority] ?? 1;
+    if (aPrio !== bPrio) {
+      return aPrio - bPrio;
+    }
+    return a.slug.localeCompare(b.slug);
+  });
+}
+
+/**
+ * Enrich chunks with associated files, findings, and aggregated stats.
+ * Chunks are returned in the same order as the input (caller is responsible for sorting).
+ */
+export function buildChunkStats(
   chunks: DashboardChunk[],
   findings: DashboardFinding[],
   files: DashboardFile[],
@@ -68,7 +102,7 @@ export function buildSortedChunks(
     }
   }
 
-  const enriched: ChunkWithStats[] = chunks.map((chunk) => {
+  return chunks.map((chunk) => {
     const chunkFiles = filesByChunk.get(chunk.id) ?? [];
     const chunkFindings = findingsByChunk.get(chunk.id) ?? [];
     return {
@@ -78,21 +112,5 @@ export function buildSortedChunks(
       totalAdditions: chunkFiles.reduce((sum, f) => sum + f.additions, 0),
       totalDeletions: chunkFiles.reduce((sum, f) => sum + f.deletions, 0),
     };
-  });
-
-  // Sort: chunks with critical findings first, then by priority, then by slug
-  return enriched.toSorted((a, b) => {
-    const aCrit = a.findings.filter((f) => f.severity === 'critical').length;
-    const bCrit = b.findings.filter((f) => f.severity === 'critical').length;
-    if (aCrit !== bCrit) {
-      // More critical findings = higher priority
-      return bCrit - aCrit;
-    }
-    const aPrio = PRIORITY_ORDER[a.chunk.reviewPriority] ?? 1;
-    const bPrio = PRIORITY_ORDER[b.chunk.reviewPriority] ?? 1;
-    if (aPrio !== bPrio) {
-      return aPrio - bPrio;
-    }
-    return a.chunk.slug.localeCompare(b.chunk.slug);
   });
 }

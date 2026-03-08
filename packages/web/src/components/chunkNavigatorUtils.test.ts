@@ -5,7 +5,7 @@ import type {
   DashboardFile,
   DashboardFinding,
 } from '../routes/$provider/$org/$repo/$pr/types.js';
-import { buildSortedChunks, countBySeverity } from './chunkNavigatorUtils.js';
+import { buildChunkStats, countBySeverity, sortChunksByPriority } from './chunkNavigatorUtils.js';
 
 // ─── Test factories ───────────────────────────────────────────────────────────
 
@@ -103,11 +103,11 @@ describe('countBySeverity', () => {
   });
 });
 
-// ─── buildSortedChunks ───────────────────────────────────────────────────────
+// ─── buildChunkStats ──────────────────────────────────────────────────────────
 
-describe('buildSortedChunks', () => {
+describe('buildChunkStats', () => {
   it('returns empty array for no chunks', () => {
-    expect(buildSortedChunks([], [], [])).toEqual([]);
+    expect(buildChunkStats([], [], [])).toEqual([]);
   });
 
   it('enriches chunk with files and findings', () => {
@@ -118,7 +118,7 @@ describe('buildSortedChunks', () => {
     ];
     const findings = [makeFinding({ chunkId: 1 })];
 
-    const result = buildSortedChunks(chunks, findings, files);
+    const result = buildChunkStats(chunks, findings, files);
     const first = at(result, 0);
 
     expect(result).toHaveLength(1);
@@ -128,47 +128,6 @@ describe('buildSortedChunks', () => {
     expect(first.totalDeletions).toBe(8);
   });
 
-  it('sorts chunks with critical findings first', () => {
-    const chunks = [
-      makeChunk({ id: 1, slug: 'no-findings', reviewPriority: 'high' }),
-      makeChunk({ id: 2, slug: 'has-critical', reviewPriority: 'low' }),
-    ];
-    const findings = [makeFinding({ chunkId: 2, severity: 'critical' })];
-
-    const result = buildSortedChunks(chunks, findings, []);
-
-    expect(at(result, 0).chunk.slug).toBe('has-critical');
-    expect(at(result, 1).chunk.slug).toBe('no-findings');
-  });
-
-  it('sorts by priority when critical count is equal', () => {
-    const chunks = [
-      makeChunk({ id: 1, slug: 'low-priority', reviewPriority: 'low' }),
-      makeChunk({ id: 2, slug: 'high-priority', reviewPriority: 'high' }),
-      makeChunk({ id: 3, slug: 'medium-priority', reviewPriority: 'medium' }),
-    ];
-
-    const result = buildSortedChunks(chunks, [], []);
-
-    expect(result.map((r) => r.chunk.slug)).toEqual([
-      'high-priority',
-      'medium-priority',
-      'low-priority',
-    ]);
-  });
-
-  it('sorts alphabetically by slug when priority is equal', () => {
-    const chunks = [
-      makeChunk({ id: 1, slug: 'zebra', reviewPriority: 'medium' }),
-      makeChunk({ id: 2, slug: 'alpha', reviewPriority: 'medium' }),
-      makeChunk({ id: 3, slug: 'mike', reviewPriority: 'medium' }),
-    ];
-
-    const result = buildSortedChunks(chunks, [], []);
-
-    expect(result.map((r) => r.chunk.slug)).toEqual(['alpha', 'mike', 'zebra']);
-  });
-
   it('handles files with null chunkId', () => {
     const chunks = [makeChunk({ id: 1 })];
     const files = [
@@ -176,7 +135,7 @@ describe('buildSortedChunks', () => {
       makeFile({ id: 2, chunkId: null, additions: 5, deletions: 0 }),
     ];
 
-    const result = buildSortedChunks(chunks, [], files);
+    const result = buildChunkStats(chunks, [], files);
     const first = at(result, 0);
 
     expect(first.files).toHaveLength(1);
@@ -187,7 +146,7 @@ describe('buildSortedChunks', () => {
     const chunks = [makeChunk({ id: 1 })];
     const findings = [makeFinding({ chunkId: 1 }), makeFinding({ id: 2, chunkId: null })];
 
-    const result = buildSortedChunks(chunks, findings, []);
+    const result = buildChunkStats(chunks, findings, []);
 
     expect(at(result, 0).findings).toHaveLength(1);
   });
@@ -201,22 +160,69 @@ describe('buildSortedChunks', () => {
     ];
     const findings = [makeFinding({ id: 1, chunkId: 2, severity: 'critical' })];
 
-    const result = buildSortedChunks(chunks, findings, files);
+    const result = buildChunkStats(chunks, findings, files);
+    // buildChunkStats preserves input order (no sorting)
     const first = at(result, 0);
     const second = at(result, 1);
 
-    // Chunk-b should be first (has critical finding)
-    expect(first.chunk.slug).toBe('chunk-b');
-    expect(first.files).toHaveLength(2);
-    expect(first.findings).toHaveLength(1);
-    expect(first.totalAdditions).toBe(25);
-    expect(first.totalDeletions).toBe(11);
+    expect(first.chunk.slug).toBe('chunk-a');
+    expect(first.files).toHaveLength(1);
+    expect(first.findings).toHaveLength(0);
+    expect(first.totalAdditions).toBe(10);
+    expect(first.totalDeletions).toBe(5);
 
-    expect(second.chunk.slug).toBe('chunk-a');
-    expect(second.files).toHaveLength(1);
-    expect(second.findings).toHaveLength(0);
-    expect(second.totalAdditions).toBe(10);
-    expect(second.totalDeletions).toBe(5);
+    expect(second.chunk.slug).toBe('chunk-b');
+    expect(second.files).toHaveLength(2);
+    expect(second.findings).toHaveLength(1);
+    expect(second.totalAdditions).toBe(25);
+    expect(second.totalDeletions).toBe(11);
+  });
+
+  it('review status is preserved in chunk data', () => {
+    const chunks = [makeChunk({ id: 1, status: 'reviewed' })];
+    const result = buildChunkStats(chunks, [], []);
+    expect(at(result, 0).chunk.status).toBe('reviewed');
+  });
+});
+
+// ─── sortChunksByPriority ─────────────────────────────────────────────────────
+
+describe('sortChunksByPriority', () => {
+  it('sorts chunks with critical findings first', () => {
+    const chunks = [
+      makeChunk({ id: 1, slug: 'no-findings', reviewPriority: 'high' }),
+      makeChunk({ id: 2, slug: 'has-critical', reviewPriority: 'low' }),
+    ];
+    const findings = [makeFinding({ chunkId: 2, severity: 'critical' })];
+
+    const result = sortChunksByPriority(chunks, findings);
+
+    expect(at(result, 0).slug).toBe('has-critical');
+    expect(at(result, 1).slug).toBe('no-findings');
+  });
+
+  it('sorts by priority when critical count is equal', () => {
+    const chunks = [
+      makeChunk({ id: 1, slug: 'low-priority', reviewPriority: 'low' }),
+      makeChunk({ id: 2, slug: 'high-priority', reviewPriority: 'high' }),
+      makeChunk({ id: 3, slug: 'medium-priority', reviewPriority: 'medium' }),
+    ];
+
+    const result = sortChunksByPriority(chunks, []);
+
+    expect(result.map((r) => r.slug)).toEqual(['high-priority', 'medium-priority', 'low-priority']);
+  });
+
+  it('sorts alphabetically by slug when priority is equal', () => {
+    const chunks = [
+      makeChunk({ id: 1, slug: 'zebra', reviewPriority: 'medium' }),
+      makeChunk({ id: 2, slug: 'alpha', reviewPriority: 'medium' }),
+      makeChunk({ id: 3, slug: 'mike', reviewPriority: 'medium' }),
+    ];
+
+    const result = sortChunksByPriority(chunks, []);
+
+    expect(result.map((r) => r.slug)).toEqual(['alpha', 'mike', 'zebra']);
   });
 
   it('chunk with more critical findings sorts before chunk with fewer', () => {
@@ -230,15 +236,13 @@ describe('buildSortedChunks', () => {
       makeFinding({ id: 3, chunkId: 2, severity: 'critical' }),
     ];
 
-    const result = buildSortedChunks(chunks, findings, []);
+    const result = sortChunksByPriority(chunks, findings);
 
-    expect(at(result, 0).chunk.slug).toBe('two-critical');
-    expect(at(result, 1).chunk.slug).toBe('one-critical');
+    expect(at(result, 0).slug).toBe('two-critical');
+    expect(at(result, 1).slug).toBe('one-critical');
   });
 
-  it('review status is preserved in chunk data', () => {
-    const chunks = [makeChunk({ id: 1, status: 'reviewed' })];
-    const result = buildSortedChunks(chunks, [], []);
-    expect(at(result, 0).chunk.status).toBe('reviewed');
+  it('returns empty array for no chunks', () => {
+    expect(sortChunksByPriority([], [])).toEqual([]);
   });
 });

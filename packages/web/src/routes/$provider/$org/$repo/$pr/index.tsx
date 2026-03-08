@@ -2,6 +2,7 @@ import { Link, createFileRoute, useRouter } from '@tanstack/react-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { ChunkNavigator } from '@/components/ChunkNavigator.js';
+import { sortChunksByPriority } from '@/components/chunkNavigatorUtils.js';
 import type { DiffStyle } from '@/components/DiffViewer.js';
 import { DiffViewer } from '@/components/DiffViewer.js';
 import { ReviewSummary } from '@/components/ReviewSummary.js';
@@ -73,11 +74,13 @@ function PRViewPage() {
 
   // ─── Derived data ─────────────────────────────────────────────────────────
 
-  /** Chunks with locally-updated reviewed status applied. */
-  const effectiveChunks = useMemo<DashboardChunk[]>(
-    () => chunks.map((c) => (reviewedSlugs.has(c.slug) ? { ...c, status: 'reviewed' } : c)),
-    [chunks, reviewedSlugs],
-  );
+  /** Chunks with locally-updated reviewed status, sorted by priority. */
+  const effectiveChunks = useMemo<DashboardChunk[]>(() => {
+    const withStatus = chunks.map((c) =>
+      reviewedSlugs.has(c.slug) ? { ...c, status: 'reviewed' } : c,
+    );
+    return sortChunksByPriority(withStatus, findings);
+  }, [chunks, findings, reviewedSlugs]);
 
   // ─── Callbacks ────────────────────────────────────────────────────────────
 
