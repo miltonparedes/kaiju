@@ -158,8 +158,9 @@ describe('Data access: getDashboardReviewsFromStore', () => {
   it('handles multiple reviews independently', async () => {
     await seedTestData(store);
 
+    const otherKey = ['github', 'acme', 'other', '10'].join('/');
     await store.createReview({
-      key: 'github/acme/other/10',
+      key: otherKey,
       provider: 'github',
       repo: 'acme/other',
       pr: 10,
@@ -170,12 +171,52 @@ describe('Data access: getDashboardReviewsFromStore', () => {
     expect(reviews).toHaveLength(2);
 
     const first = reviews.find((r) => r.key === 'github/acme/widgets/42')!;
-    const second = reviews.find((r) => r.key === 'github/acme/other/10')!;
+    const second = reviews.find((r) => r.key === otherKey)!;
 
     expect(first.fileCount).toBe(3);
     expect(first.chunkCount).toBe(2);
     expect(second.fileCount).toBe(0);
     expect(second.chunkCount).toBe(0);
+  });
+
+  it('filters reviews by context when org/repo provided', async () => {
+    await seedTestData(store);
+
+    const otherKey = ['github', 'acme', 'other-tools', '99'].join('/');
+    await store.createReview({
+      key: otherKey,
+      provider: 'github',
+      repo: 'acme/other-tools',
+      pr: 99,
+      title: 'Another PR',
+    });
+
+    const filtered = getDashboardReviewsFromStore(store, { org: 'acme', repo: 'widgets' });
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0]!.key).toBe('github/acme/widgets/42');
+  });
+
+  it('returns all reviews when no context filter is provided', async () => {
+    await seedTestData(store);
+
+    const otherKey = ['github', 'acme', 'other-tools', '99'].join('/');
+    await store.createReview({
+      key: otherKey,
+      provider: 'github',
+      repo: 'acme/other-tools',
+      pr: 99,
+      title: 'Another PR',
+    });
+
+    const all = getDashboardReviewsFromStore(store, undefined);
+    expect(all).toHaveLength(2);
+  });
+
+  it('returns empty when context filter matches no reviews', async () => {
+    await seedTestData(store);
+
+    const filtered = getDashboardReviewsFromStore(store, { org: 'foo', repo: 'bar' });
+    expect(filtered).toHaveLength(0);
   });
 });
 

@@ -21,13 +21,28 @@ export interface DashboardReviewData {
   updatedAt: number;
 }
 
+/** Optional context filter for scoping reviews to a specific repo. */
+export interface RepoContextFilter {
+  org: string;
+  repo: string;
+}
+
 /**
  * Enrich all reviews with stats for the dashboard cards.
+ * When a context filter is provided, only reviews matching `{org}/{repo}` are returned.
  * Returns file count, chunk count, reviewed-chunk count, finding count,
  * and updatedAt timestamp per review.
  */
-export function getDashboardReviewsFromStore(store: KaijuStore): DashboardReviewData[] {
-  const reviews = store.listReviews();
+export function getDashboardReviewsFromStore(
+  store: KaijuStore,
+  context?: RepoContextFilter,
+): DashboardReviewData[] {
+  let reviews = store.listReviews();
+
+  if (context) {
+    const target = `${context.org}/${context.repo}`;
+    reviews = reviews.filter((r) => r.repo === target);
+  }
 
   return reviews.map((r) => {
     const files = store.getFiles(r.key);

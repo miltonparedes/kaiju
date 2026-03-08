@@ -1,8 +1,25 @@
 import { createServerFn } from '@tanstack/react-start';
 
 import { getDashboardReviewsFromStore, getReviewFromStore } from './dataAccess.js';
-import type { DashboardReviewData } from './dataAccess.js';
+import type { DashboardReviewData, RepoContextFilter } from './dataAccess.js';
 import { getStore } from './store.js';
+
+// ─── Context helpers ────────────────────────────────────────────────────────────
+
+/**
+ * Read repo-context env vars set by `kaiju show` (when run inside a git repo).
+ * Returns a filter when both KAIJU_CONTEXT_ORG and KAIJU_CONTEXT_REPO are set.
+ */
+export function readRepoContext(): RepoContextFilter | undefined {
+  const org = process.env.KAIJU_CONTEXT_ORG;
+  const repo = process.env.KAIJU_CONTEXT_REPO;
+  if (org && repo) {
+    return { org, repo };
+  }
+  return undefined;
+}
+
+// ─── Server functions ───────────────────────────────────────────────────────────
 
 /**
  * List all reviews (raw rows).
@@ -15,15 +32,23 @@ export const getReviews = createServerFn({ method: 'GET' }).handler(async () => 
 /** Dashboard card shape returned by getDashboardReviews. */
 export type DashboardReview = DashboardReviewData;
 
+/** Response shape for the dashboard: reviews + optional active context. */
+export interface DashboardData {
+  reviews: DashboardReview[];
+  context: { org: string; repo: string } | null;
+}
+
 /**
- * List all reviews enriched with stats for the dashboard cards.
- * Returns file count, chunk count, reviewed-chunk count, finding count,
- * and updatedAt timestamp per review.
+ * List reviews enriched with stats for the dashboard cards.
+ * Applies repo-context filtering when KAIJU_CONTEXT_ORG and KAIJU_CONTEXT_REPO
+ * env vars are set (i.e. `kaiju show` was run inside a repo without `--all`).
  */
 export const getDashboardReviews = createServerFn({ method: 'GET' }).handler(
-  async (): Promise<DashboardReview[]> => {
+  async (): Promise<DashboardData> => {
     const store = getStore();
-    return getDashboardReviewsFromStore(store);
+    const context = readRepoContext();
+    const reviews = getDashboardReviewsFromStore(store, context);
+    return { reviews, context: context ?? null };
   },
 );
 

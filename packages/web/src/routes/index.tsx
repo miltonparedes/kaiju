@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge.js';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.js';
 import { Progress } from '@/components/ui/progress.js';
 import { getDashboardReviews } from '@/server/reviews.js';
-import type { DashboardReview } from '@/server/reviews.js';
+import type { DashboardData, DashboardReview } from '@/server/reviews.js';
 
 export const Route = createFileRoute('/')({
   loader: () => getDashboardReviews(),
@@ -131,8 +131,37 @@ function ReviewCard({ review }: { review: DashboardReview }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+function ContextBanner({ org, repo }: { org: string; repo: string }) {
+  return (
+    <div className="mb-6 flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5 text-sm text-primary">
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 16 16"
+        fill="currentColor"
+        className="size-4 shrink-0"
+      >
+        <path
+          fillRule="evenodd"
+          d="M8.074.945A4.993 4.993 0 0 0 6 5v.032c.004.6.114 1.176.311 1.709.16.428-.204.91-.61.7a5.023 5.023 0 0 1-1.868-1.677c-.202-.304-.648-.363-.848-.058a6 6 0 1 0 8.017-1.901l-.004-.007a4.98 4.98 0 0 1-2.18-2.574c-.116-.31-.477-.472-.744-.28ZM6.5 10.5a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0Z"
+          clipRule="evenodd"
+        />
+      </svg>
+      <span>
+        Showing reviews for{' '}
+        <span className="font-semibold">
+          {org}/{repo}
+        </span>
+      </span>
+      <Badge variant="outline" className="ml-auto border-primary/30 text-primary">
+        filtered
+      </Badge>
+    </div>
+  );
+}
+
 function DashboardPage() {
-  const reviews = Route.useLoaderData();
+  const data: DashboardData = Route.useLoaderData();
+  const { reviews, context } = data;
 
   return (
     <main className="mx-auto max-w-4xl px-6 py-10">
@@ -145,6 +174,9 @@ function DashboardPage() {
             : 'Divide, visualize, and share giant PRs'}
         </p>
       </header>
+
+      {/* Context filter indicator */}
+      {context ? <ContextBanner org={context.org} repo={context.repo} /> : null}
 
       {/* Content */}
       {reviews.length === 0 ? (
