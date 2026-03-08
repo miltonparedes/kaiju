@@ -468,7 +468,7 @@ describe('manifest stats consistency', () => {
 describe('deleteReview', () => {
   it('removes review from SQLite and returns true', async () => {
     await store.createReview(makeReviewInput());
-    const deleted = store.deleteReview('github/acme/widgets/9999');
+    const deleted = await store.deleteReview('github/acme/widgets/9999');
     expect(deleted).toBe(true);
 
     const review = store.getReview('github/acme/widgets/9999');
@@ -495,7 +495,7 @@ describe('deleteReview', () => {
       timestamp: '2026-03-07T10:30:00Z',
     });
 
-    store.deleteReview(review.key);
+    await store.deleteReview(review.key);
 
     // All entities gone from SQLite
     expect(store.getFiles(review.key)).toEqual([]);

@@ -1,4 +1,6 @@
-import { eq } from 'drizzle-orm';
+import { rm } from 'node:fs/promises';
+
+import { eq, sql } from 'drizzle-orm';
 
 import type { FileStatus, FindingSeverity, FindingStatus, ReviewPriority } from '../types/index.js';
 import type { CommentState } from '../types/index.js';
@@ -112,38 +114,48 @@ export class KaijuStore {
   /**
    * Create a new review in both SQLite and disk.
    * Creates directory structure, manifest.json, and empty files.json.
+   * Wrapped in a transaction: DB changes roll back if FS writes fail.
    */
   async createReview(input: CreateReviewInput) {
     // Validate key format
     parseReviewKey(input.key);
 
-    // SQLite layer
-    const result = this.db
-      .insert(reviews)
-      .values({
-        key: input.key,
-        provider: input.provider,
-        repo: input.repo,
-        pr: input.pr,
-        title: input.title ?? '',
-        url: input.url ?? '',
-        base: input.base ?? '',
-        head: input.head ?? '',
-        rawDiff: input.rawDiff ?? null,
-      })
-      .returning()
-      .get();
+    // SQLite layer — begin transaction
+    this.db.run(sql`BEGIN`);
+    let result;
+    try {
+      result = this.db
+        .insert(reviews)
+        .values({
+          key: input.key,
+          provider: input.provider,
+          repo: input.repo,
+          pr: input.pr,
+          title: input.title ?? '',
+          url: input.url ?? '',
+          base: input.base ?? '',
+          head: input.head ?? '',
+          rawDiff: input.rawDiff ?? null,
+        })
+        .returning()
+        .get();
 
-    // File layer
-    const reviewDir = getReviewDir(input.key, this.baseDir);
-    await ensureReviewDirs(reviewDir);
+      // File layer
+      const reviewDir = getReviewDir(input.key, this.baseDir);
+      await ensureReviewDirs(reviewDir);
 
-    // Write empty files.json
-    await writeFilesJson(reviewDir, { files: [], imports: [] });
+      // Write empty files.json
+      await writeFilesJson(reviewDir, { files: [], imports: [] });
 
-    // Write initial manifest.json
-    const manifest = this.buildManifest(input, [], [], 0, 0);
-    await writeManifest(reviewDir, manifest);
+      // Write initial manifest.json
+      const manifest = this.buildManifest(input, [], [], 0, 0);
+      await writeManifest(reviewDir, manifest);
+
+      this.db.run(sql`COMMIT`);
+    } catch (error) {
+      this.db.run(sql`ROLLBACK`);
+      throw error;
+    }
 
     return result;
   }
@@ -158,14 +170,30 @@ export class KaijuStore {
     return this.db.select().from(reviews).all();
   }
 
-  /** Delete a review from SQLite. Returns true if deleted, false if not found. */
-  deleteReview(key: string): boolean {
+  /**
+   * Delete a review from both SQLite and disk.
+   * Returns true if deleted, false if not found.
+   */
+  async deleteReview(key: string): Promise<boolean> {
     const result = this.db.delete(reviews).where(eq(reviews.key, key)).returning().all();
-    return result.length > 0;
+    if (result.length === 0) {
+      return false;
+    }
+
+    // Remove review directory from disk
+    try {
+      const reviewDir = getReviewDir(key, this.baseDir);
+      await rm(reviewDir, { recursive: true, force: true });
+    } catch {
+      // Directory may not exist on disk (e.g., DB-only review); ignore FS errors
+    }
+
+    return true;
   }
 
   /**
    * Update review status and sync to both layers.
+   * Wrapped in a transaction: DB changes roll back if FS writes fail.
    */
   async updateReviewStatus(key: string, status: string) {
     const review = this.getReview(key);
@@ -173,15 +201,23 @@ export class KaijuStore {
       throw new Error(`Review not found: ${key}`);
     }
 
-    // SQLite layer
-    this.db
-      .update(reviews)
-      .set({ status, updatedAt: Math.floor(Date.now() / 1000) })
-      .where(eq(reviews.key, key))
-      .run();
+    this.db.run(sql`BEGIN`);
+    try {
+      // SQLite layer
+      this.db
+        .update(reviews)
+        .set({ status, updatedAt: Math.floor(Date.now() / 1000) })
+        .where(eq(reviews.key, key))
+        .run();
 
-    // File layer — update manifest
-    await this.syncManifest(key);
+      // File layer — update manifest
+      await this.syncManifest(key);
+
+      this.db.run(sql`COMMIT`);
+    } catch (error) {
+      this.db.run(sql`ROLLBACK`);
+      throw error;
+    }
   }
 
   /** Store raw diff text in the review row. */
@@ -193,6 +229,7 @@ export class KaijuStore {
 
   /**
    * Add files to a review. Updates both SQLite and files.json on disk.
+   * Wrapped in a transaction: DB changes roll back if FS writes fail.
    */
   async addFiles(key: string, fileInputs: CreateFileInput[]) {
     const review = this.getReview(key);
@@ -200,30 +237,37 @@ export class KaijuStore {
       throw new Error(`Review not found: ${key}`);
     }
 
-    // SQLite layer
-    const results = [];
-    for (const f of fileInputs) {
-      const result = this.db
-        .insert(files)
-        .values({
-          reviewId: review.id,
-          path: f.path,
-          status: f.status,
-          additions: f.additions,
-          deletions: f.deletions,
-        })
-        .returning()
-        .get();
-      results.push(result);
+    this.db.run(sql`BEGIN`);
+    try {
+      // SQLite layer
+      const results = [];
+      for (const f of fileInputs) {
+        const result = this.db
+          .insert(files)
+          .values({
+            reviewId: review.id,
+            path: f.path,
+            status: f.status,
+            additions: f.additions,
+            deletions: f.deletions,
+          })
+          .returning()
+          .get();
+        results.push(result);
+      }
+
+      // File layer — update files.json
+      await this.syncFilesJson(key);
+
+      // Update manifest stats
+      await this.syncManifest(key);
+
+      this.db.run(sql`COMMIT`);
+      return results;
+    } catch (error) {
+      this.db.run(sql`ROLLBACK`);
+      throw error;
     }
-
-    // File layer — update files.json
-    await this.syncFilesJson(key);
-
-    // Update manifest stats
-    await this.syncManifest(key);
-
-    return results;
   }
 
   /** Get all files for a review. */
@@ -237,6 +281,7 @@ export class KaijuStore {
 
   /**
    * Add imports to a review. Updates both SQLite and files.json on disk.
+   * Wrapped in a transaction: DB changes roll back if FS writes fail.
    */
   async addImports(key: string, importInputs: CreateImportInput[]) {
     const review = this.getReview(key);
@@ -244,25 +289,32 @@ export class KaijuStore {
       throw new Error(`Review not found: ${key}`);
     }
 
-    // SQLite layer
-    const results = [];
-    for (const imp of importInputs) {
-      const result = this.db
-        .insert(imports)
-        .values({
-          reviewId: review.id,
-          source: imp.source,
-          target: imp.target,
-        })
-        .returning()
-        .get();
-      results.push(result);
+    this.db.run(sql`BEGIN`);
+    try {
+      // SQLite layer
+      const results = [];
+      for (const imp of importInputs) {
+        const result = this.db
+          .insert(imports)
+          .values({
+            reviewId: review.id,
+            source: imp.source,
+            target: imp.target,
+          })
+          .returning()
+          .get();
+        results.push(result);
+      }
+
+      // File layer — update files.json (imports section)
+      await this.syncFilesJson(key);
+
+      this.db.run(sql`COMMIT`);
+      return results;
+    } catch (error) {
+      this.db.run(sql`ROLLBACK`);
+      throw error;
     }
-
-    // File layer — update files.json (imports section)
-    await this.syncFilesJson(key);
-
-    return results;
   }
 
   /** Get all imports for a review. */
@@ -277,6 +329,7 @@ export class KaijuStore {
   /**
    * Add a chunk to a review. Updates SQLite, writes .patch + .meta.json,
    * assigns files to chunk, and updates manifest.
+   * Wrapped in a transaction: DB changes roll back if FS writes fail.
    */
   async addChunk(key: string, input: CreateChunkInput) {
     const review = this.getReview(key);
@@ -284,75 +337,82 @@ export class KaijuStore {
       throw new Error(`Review not found: ${key}`);
     }
 
-    // SQLite layer — create chunk
-    const chunk = this.db
-      .insert(chunks)
-      .values({
-        reviewId: review.id,
-        slug: input.slug,
-        title: input.title,
-        description: input.description ?? '',
-        reviewPriority: input.reviewPriority ?? 'medium',
-        estimatedTokens: input.estimatedTokens ?? 0,
-      })
-      .returning()
-      .get();
+    this.db.run(sql`BEGIN`);
+    try {
+      // SQLite layer — create chunk
+      const chunk = this.db
+        .insert(chunks)
+        .values({
+          reviewId: review.id,
+          slug: input.slug,
+          title: input.title,
+          description: input.description ?? '',
+          reviewPriority: input.reviewPriority ?? 'medium',
+          estimatedTokens: input.estimatedTokens ?? 0,
+        })
+        .returning()
+        .get();
 
-    // Assign files to chunk by path
-    if (input.filePaths && input.filePaths.length > 0) {
-      const pathSet = new Set(input.filePaths);
-      const allFiles = this.db.select().from(files).where(eq(files.reviewId, review.id)).all();
-      for (const f of allFiles) {
-        if (pathSet.has(f.path)) {
-          this.db.update(files).set({ chunkId: chunk.id }).where(eq(files.id, f.id)).run();
+      // Assign files to chunk by path
+      if (input.filePaths && input.filePaths.length > 0) {
+        const pathSet = new Set(input.filePaths);
+        const allFiles = this.db.select().from(files).where(eq(files.reviewId, review.id)).all();
+        for (const f of allFiles) {
+          if (pathSet.has(f.path)) {
+            this.db.update(files).set({ chunkId: chunk.id }).where(eq(files.id, f.id)).run();
+          }
         }
       }
+
+      // Auto-transition review status to 'split' when first chunk is added
+      if (review.status === 'fetched') {
+        this.db
+          .update(reviews)
+          .set({ status: 'split', updatedAt: Math.floor(Date.now() / 1000) })
+          .where(eq(reviews.key, key))
+          .run();
+      }
+
+      // File layer — write .patch
+      const reviewDir = getReviewDir(key, this.baseDir);
+      await writeChunkPatch(reviewDir, input.slug, input.patchContent);
+
+      // File layer — write .meta.json
+      const chunkFiles = this.getChunkFiles(review.id, chunk.id);
+      const chunkComments = this.getChunkCommentThreadIds(review.id, chunk.id);
+      const chunkFindings = this.getChunkFindingIds(review.id, chunk.id);
+
+      const meta: ChunkMetaJson = {
+        id: input.slug,
+        title: input.title,
+        description: input.description ?? '',
+        review_priority: input.reviewPriority ?? 'medium',
+        estimated_tokens: input.estimatedTokens ?? 0,
+        files: chunkFiles.map((f) => ({
+          path: f.path,
+          status: f.status as FileStatus,
+          additions: f.additions,
+          deletions: f.deletions,
+        })),
+        context: {
+          imports_from: [],
+          imported_by: [],
+          has_breaking_changes: false,
+        },
+        comments: chunkComments,
+        findings: chunkFindings,
+      };
+      await writeChunkMeta(reviewDir, input.slug, meta);
+
+      // Update manifest
+      await this.syncManifest(key);
+
+      this.db.run(sql`COMMIT`);
+      return chunk;
+    } catch (error) {
+      this.db.run(sql`ROLLBACK`);
+      throw error;
     }
-
-    // Auto-transition review status to 'split' when first chunk is added
-    if (review.status === 'fetched') {
-      this.db
-        .update(reviews)
-        .set({ status: 'split', updatedAt: Math.floor(Date.now() / 1000) })
-        .where(eq(reviews.key, key))
-        .run();
-    }
-
-    // File layer — write .patch
-    const reviewDir = getReviewDir(key, this.baseDir);
-    await writeChunkPatch(reviewDir, input.slug, input.patchContent);
-
-    // File layer — write .meta.json
-    const chunkFiles = this.getChunkFiles(review.id, chunk.id);
-    const chunkComments = this.getChunkCommentThreadIds(review.id, chunk.id);
-    const chunkFindings = this.getChunkFindingIds(review.id, chunk.id);
-
-    const meta: ChunkMetaJson = {
-      id: input.slug,
-      title: input.title,
-      description: input.description ?? '',
-      review_priority: input.reviewPriority ?? 'medium',
-      estimated_tokens: input.estimatedTokens ?? 0,
-      files: chunkFiles.map((f) => ({
-        path: f.path,
-        status: f.status as FileStatus,
-        additions: f.additions,
-        deletions: f.deletions,
-      })),
-      context: {
-        imports_from: [],
-        imported_by: [],
-        has_breaking_changes: false,
-      },
-      comments: chunkComments,
-      findings: chunkFindings,
-    };
-    await writeChunkMeta(reviewDir, input.slug, meta);
-
-    // Update manifest
-    await this.syncManifest(key);
-
-    return chunk;
   }
 
   /** Get all chunks for a review. */
@@ -368,6 +428,7 @@ export class KaijuStore {
    * Add a comment to a review. Updates SQLite and writes/updates comment file.
    * If a comment with the same threadId exists, the file is updated with
    * an appended message (thread grouping).
+   * Wrapped in a transaction: DB changes roll back if FS writes fail.
    */
   async addComment(key: string, input: CreateCommentInput) {
     const review = this.getReview(key);
@@ -375,57 +436,64 @@ export class KaijuStore {
       throw new Error(`Review not found: ${key}`);
     }
 
-    // SQLite layer
-    const comment = this.db
-      .insert(comments)
-      .values({
-        reviewId: review.id,
-        threadId: input.threadId,
+    this.db.run(sql`BEGIN`);
+    try {
+      // SQLite layer
+      const comment = this.db
+        .insert(comments)
+        .values({
+          reviewId: review.id,
+          threadId: input.threadId,
+          source: input.source ?? 'github',
+          state: input.state ?? 'open',
+          chunkId: input.chunkId ?? null,
+          file: input.file ?? null,
+          line: input.line ?? null,
+          body: input.body,
+          author: input.author ?? null,
+          timestamp: input.timestamp ?? null,
+          ghCommentId: input.ghCommentId ?? null,
+        })
+        .returning()
+        .get();
+
+      // File layer — gather all messages for this thread from SQLite
+      const threadComments = this.db
+        .select()
+        .from(comments)
+        .where(eq(comments.threadId, input.threadId))
+        .all();
+
+      // Resolve chunk slug from numeric ID for on-disk representation
+      const chunkSlug = input.chunkId ? this.resolveChunkSlug(input.chunkId) : null;
+
+      const commentFile: CommentFileJson = {
+        thread_id: input.threadId,
         source: input.source ?? 'github',
         state: input.state ?? 'open',
-        chunkId: input.chunkId ?? null,
+        chunk_id: chunkSlug,
         file: input.file ?? null,
         line: input.line ?? null,
-        body: input.body,
-        author: input.author ?? null,
-        timestamp: input.timestamp ?? null,
-        ghCommentId: input.ghCommentId ?? null,
-      })
-      .returning()
-      .get();
+        messages: threadComments.map((c) => ({
+          author: c.author ?? '',
+          body: c.body,
+          timestamp: c.timestamp ?? '',
+          ...(c.ghCommentId ? { gh_comment_id: c.ghCommentId } : {}),
+        })),
+      };
 
-    // File layer — gather all messages for this thread from SQLite
-    const threadComments = this.db
-      .select()
-      .from(comments)
-      .where(eq(comments.threadId, input.threadId))
-      .all();
+      const reviewDir = getReviewDir(key, this.baseDir);
+      await writeCommentFile(reviewDir, input.threadId, commentFile);
 
-    // Resolve chunk slug from numeric ID for on-disk representation
-    const chunkSlug = input.chunkId ? this.resolveChunkSlug(input.chunkId) : null;
+      // Update manifest stats
+      await this.syncManifest(key);
 
-    const commentFile: CommentFileJson = {
-      thread_id: input.threadId,
-      source: input.source ?? 'github',
-      state: input.state ?? 'open',
-      chunk_id: chunkSlug,
-      file: input.file ?? null,
-      line: input.line ?? null,
-      messages: threadComments.map((c) => ({
-        author: c.author ?? '',
-        body: c.body,
-        timestamp: c.timestamp ?? '',
-        ...(c.ghCommentId ? { gh_comment_id: c.ghCommentId } : {}),
-      })),
-    };
-
-    const reviewDir = getReviewDir(key, this.baseDir);
-    await writeCommentFile(reviewDir, input.threadId, commentFile);
-
-    // Update manifest stats
-    await this.syncManifest(key);
-
-    return comment;
+      this.db.run(sql`COMMIT`);
+      return comment;
+    } catch (error) {
+      this.db.run(sql`ROLLBACK`);
+      throw error;
+    }
   }
 
   /** Get all comments for a review. */
@@ -439,6 +507,7 @@ export class KaijuStore {
 
   /**
    * Add a finding to a review. Updates SQLite and writes finding file.
+   * Wrapped in a transaction: DB changes roll back if FS writes fail.
    */
   async addFinding(key: string, input: CreateFindingInput) {
     const review = this.getReview(key);
@@ -446,64 +515,71 @@ export class KaijuStore {
       throw new Error(`Review not found: ${key}`);
     }
 
-    // SQLite layer
-    const finding = this.db
-      .insert(findings)
-      .values({
-        reviewId: review.id,
-        chunkId: input.chunkId ?? null,
-        reviewer: input.reviewer,
-        file: input.file,
-        line: input.line ?? null,
-        endLine: input.endLine ?? null,
-        severity: input.severity,
-        message: input.message,
-        suggestion: input.suggestion ?? null,
-        codeSuggestion: input.codeSuggestion ?? null,
-        rootCause: input.rootCause ?? null,
-        impact: input.impact ?? null,
-        status: input.status ?? 'open',
-        publish: input.publish ?? false,
-        inReplyTo: input.inReplyTo ?? null,
-        timestamp: input.timestamp ?? null,
-      })
-      .returning()
-      .get();
-
-    // File layer — write finding JSON
-    const findingId = `finding-${String(finding.id).padStart(3, '0')}`;
-    // Resolve chunk slug from numeric ID for on-disk representation
-    const findingChunkSlug = input.chunkId ? this.resolveChunkSlug(input.chunkId) : null;
-    const findingFile: FindingFileJson = {
-      id: findingId,
-      reviewer: input.reviewer,
-      chunk_id: findingChunkSlug,
-      timestamp: input.timestamp ?? new Date().toISOString(),
-      in_reply_to: input.inReplyTo ?? null,
-      findings: [
-        {
+    this.db.run(sql`BEGIN`);
+    try {
+      // SQLite layer
+      const finding = this.db
+        .insert(findings)
+        .values({
+          reviewId: review.id,
+          chunkId: input.chunkId ?? null,
+          reviewer: input.reviewer,
           file: input.file,
           line: input.line ?? null,
-          end_line: input.endLine ?? null,
+          endLine: input.endLine ?? null,
           severity: input.severity,
           message: input.message,
           suggestion: input.suggestion ?? null,
-          code_suggestion: input.codeSuggestion ?? null,
-          root_cause: input.rootCause ?? null,
+          codeSuggestion: input.codeSuggestion ?? null,
+          rootCause: input.rootCause ?? null,
           impact: input.impact ?? null,
           status: input.status ?? 'open',
           publish: input.publish ?? false,
-        },
-      ],
-    };
+          inReplyTo: input.inReplyTo ?? null,
+          timestamp: input.timestamp ?? null,
+        })
+        .returning()
+        .get();
 
-    const reviewDir = getReviewDir(key, this.baseDir);
-    await writeFindingFile(reviewDir, findingId, findingFile);
+      // File layer — write finding JSON
+      const findingId = `finding-${String(finding.id).padStart(3, '0')}`;
+      // Resolve chunk slug from numeric ID for on-disk representation
+      const findingChunkSlug = input.chunkId ? this.resolveChunkSlug(input.chunkId) : null;
+      const findingFile: FindingFileJson = {
+        id: findingId,
+        reviewer: input.reviewer,
+        chunk_id: findingChunkSlug,
+        timestamp: input.timestamp ?? new Date().toISOString(),
+        in_reply_to: input.inReplyTo ?? null,
+        findings: [
+          {
+            file: input.file,
+            line: input.line ?? null,
+            end_line: input.endLine ?? null,
+            severity: input.severity,
+            message: input.message,
+            suggestion: input.suggestion ?? null,
+            code_suggestion: input.codeSuggestion ?? null,
+            root_cause: input.rootCause ?? null,
+            impact: input.impact ?? null,
+            status: input.status ?? 'open',
+            publish: input.publish ?? false,
+          },
+        ],
+      };
 
-    // Update manifest stats
-    await this.syncManifest(key);
+      const reviewDir = getReviewDir(key, this.baseDir);
+      await writeFindingFile(reviewDir, findingId, findingFile);
 
-    return finding;
+      // Update manifest stats
+      await this.syncManifest(key);
+
+      this.db.run(sql`COMMIT`);
+      return finding;
+    } catch (error) {
+      this.db.run(sql`ROLLBACK`);
+      throw error;
+    }
   }
 
   /** Get all findings for a review. */

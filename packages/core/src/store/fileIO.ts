@@ -22,16 +22,30 @@ const DEFAULT_KAIJU_DIR = join(homedir(), '.kaiju');
 
 /**
  * Parse a review key like "github/org/repo/9999" into its components.
+ * Enforces exactly 4 segments and rejects path traversal attempts.
  */
 export function parseReviewKey(key: string): ReviewKey {
   const parts = key.split('/');
-  if (parts.length < 4 || !parts[0] || !parts[1] || !parts[2] || !parts[3]) {
-    throw new Error(`Invalid review key "${key}": expected format "provider/org/repo/pr"`);
+  if (parts.length !== 4 || !parts[0] || !parts[1] || !parts[2] || !parts[3]) {
+    throw new Error(
+      `Invalid review key "${key}": expected exactly 4 segments "provider/org/repo/pr"`,
+    );
+  }
+
+  // Reject path traversal: no segment may contain '..'
+  for (const segment of parts) {
+    if (segment === '..' || segment.includes('..')) {
+      throw new Error(
+        `Invalid review key "${key}": segments must not contain ".." (path traversal)`,
+      );
+    }
   }
 
   const pr = Number.parseInt(parts[3], 10);
   if (Number.isNaN(pr)) {
-    throw new Error(`Invalid review key "${key}": expected format "provider/org/repo/pr"`);
+    throw new Error(
+      `Invalid review key "${key}": expected exactly 4 segments "provider/org/repo/pr"`,
+    );
   }
 
   return { provider: parts[0], org: parts[1], repo: parts[2], pr };
@@ -48,12 +62,15 @@ export function reviewKeyToPath(key: ReviewKey): string {
 
 /**
  * Get the full path for a review directory.
+ * Validates the key and builds the path from parsed fields (not the raw string)
+ * to prevent path traversal attacks.
  *
  * @param key - Review key (e.g., "github/acme/widgets/9999")
  * @param baseDir - Base directory (defaults to ~/.kaiju)
  */
 export function getReviewDir(key: string, baseDir: string = DEFAULT_KAIJU_DIR): string {
-  return join(baseDir, 'reviews', key);
+  const parsed = parseReviewKey(key);
+  return join(baseDir, 'reviews', parsed.provider, parsed.org, parsed.repo, String(parsed.pr));
 }
 
 /**

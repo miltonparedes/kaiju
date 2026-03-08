@@ -95,9 +95,9 @@ describe('KaijuStore.listReviews', () => {
 });
 
 describe('KaijuStore.deleteReview', () => {
-  it('returns false for non-existent review', () => {
+  it('returns false for non-existent review', async () => {
     const store = makeStore();
-    const deleted = store.deleteReview('github/acme/widgets/99999');
+    const deleted = await store.deleteReview('github/acme/widgets/99999');
     expect(deleted).toBe(false);
     store.close();
   });
