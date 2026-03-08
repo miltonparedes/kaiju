@@ -2,6 +2,7 @@ import { Link, createFileRoute } from '@tanstack/react-router';
 import { useCallback } from 'react';
 
 import { ChunkNavigator } from '@/components/ChunkNavigator.js';
+import { DiffViewer } from '@/components/DiffViewer.js';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable.js';
 import { ScrollArea } from '@/components/ui/scroll-area.js';
 import { getChunks } from '@/server/chunks.js';
@@ -29,50 +30,6 @@ export const Route = createFileRoute('/$provider/$org/$repo/$pr/')({
   },
   component: PRViewPage,
 });
-
-// ─── Center Panel: Diff Viewer Placeholder ────────────────────────────────────
-
-function DiffViewer({ chunks }: { chunks: DashboardChunk[] }) {
-  return (
-    <div className="flex h-full flex-col">
-      <div className="border-b border-border px-4 py-3">
-        <h2 className="text-sm font-semibold text-foreground">Diffs</h2>
-      </div>
-      <ScrollArea className="flex-1">
-        <div className="p-4">
-          {chunks.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              No chunks to display. Run <code>kaiju split</code> to create chunks.
-            </p>
-          ) : (
-            <div className="space-y-4">
-              {chunks.map((chunk) => (
-                <div key={chunk.slug} className="rounded-md border border-border bg-muted/30 p-4">
-                  <h3 className="text-sm font-semibold text-foreground">
-                    {chunk.title || chunk.slug}
-                  </h3>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {chunk.description || 'No description'}
-                  </p>
-                  {chunk.patch ? (
-                    <pre className="mt-3 max-h-64 overflow-auto rounded-sm bg-background p-3 font-mono text-xs text-foreground">
-                      {chunk.patch.slice(0, 2000)}
-                      {chunk.patch.length > 2000 ? '\n... (truncated)' : ''}
-                    </pre>
-                  ) : (
-                    <p className="mt-2 text-xs italic text-muted-foreground">
-                      No patch data available
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </ScrollArea>
-    </div>
-  );
-}
 
 // ─── Right Panel: Review Summary ──────────────────────────────────────────────
 
