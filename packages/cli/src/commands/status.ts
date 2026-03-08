@@ -14,7 +14,27 @@ export interface HighPriorityChunkEntry {
   deletions: number;
   estimatedTokens: number;
   commentCount: number;
+  findingCount: number;
 }
+
+/**
+ * Compute an importance score for a chunk.
+ * Ranking heuristic: findings count > comments count > diff size.
+ * Findings are weighted most heavily, then comments, then total diff lines.
+ */
+export function chunkImportanceScore(entry: {
+  findingCount: number;
+  commentCount: number;
+  additions: number;
+  deletions: number;
+}): number {
+  return (
+    entry.findingCount * 10000 + entry.commentCount * 1000 + (entry.additions + entry.deletions)
+  );
+}
+
+/** Maximum number of chunks to show in the "High priority" section. */
+export const HIGH_PRIORITY_MAX = 5;
 
 export interface StatusDisplayData {
   repo: string;
@@ -80,8 +100,14 @@ export function formatStatusSummary(data: StatusDisplayData): string {
       const add = `${chunk.additions}+`.padStart(maxAdd);
       const del = `${chunk.deletions}-`.padStart(maxDel);
       const tok = formatTokens(chunk.estimatedTokens).padStart(maxTok);
+      const parts: string[] = [];
+      if (chunk.findingCount > 0) {
+        const findingLabel = chunk.findingCount === 1 ? 'finding' : 'findings';
+        parts.push(`${chunk.findingCount} ${findingLabel}`);
+      }
       const commentLabel = chunk.commentCount === 1 ? 'comment' : 'comments';
-      lines.push(`  ${id}  ${add} ${del}  ${tok}  ${chunk.commentCount} ${commentLabel}`);
+      parts.push(`${chunk.commentCount} ${commentLabel}`);
+      lines.push(`  ${id}  ${add} ${del}  ${tok}  ${parts.join('  ')}`);
     }
   }
 
@@ -111,6 +137,7 @@ export function formatStatusJson(data: StatusDisplayData): string {
         deletions: c.deletions,
         estimatedTokens: c.estimatedTokens,
         commentCount: c.commentCount,
+        findingCount: c.findingCount,
       })),
       ...(data.reviewDir
         ? {
@@ -134,12 +161,13 @@ export function formatStatusJson(data: StatusDisplayData): string {
 export const statusCommand = new Command('status')
   .description('Show summary of the active kaiju review')
   .argument('[pr-ref]', 'PR reference: org/repo#N (optional, uses latest if omitted)')
+  .option('-a, --all', 'Show all reviews (bypass repo-context filtering)')
   .option('--json', 'Output as JSON')
-  .action(async (prRef: string | undefined, options: { json?: boolean }) => {
+  .action(async (prRef: string | undefined, options: { all?: boolean; json?: boolean }) => {
     const store = createStore();
 
     try {
-      const reviewKey = resolveReviewKey(store, prRef);
+      const reviewKey = resolveReviewKey(store, prRef, !options.all);
       if (!reviewKey) {
         if (!process.exitCode) {
           console.error('Error: No review found. Run `kaiju fetch` first to download a PR.');
@@ -182,6 +210,14 @@ export const statusCommand = new Command('status')
         }
       }
 
+      // Build finding counts per chunk
+      const findingCountMap = new Map<number, number>();
+      for (const finding of allFindings) {
+        if (finding.chunkId != null) {
+          findingCountMap.set(finding.chunkId, (findingCountMap.get(finding.chunkId) ?? 0) + 1);
+        }
+      }
+
       // Build file stats per chunk
       const chunkFileStats = new Map<number, { additions: number; deletions: number }>();
       for (const file of allFiles) {
@@ -193,19 +229,21 @@ export const statusCommand = new Command('status')
         }
       }
 
-      // Identify high priority chunks (review_priority === 'high' OR chunks with most comments/findings)
-      const highPriorityChunks: HighPriorityChunkEntry[] = allChunks
-        .filter((c) => c.reviewPriority === 'high')
-        .map((c) => {
-          const stats = chunkFileStats.get(c.id) ?? { additions: 0, deletions: 0 };
-          return {
-            id: c.slug,
-            additions: stats.additions,
-            deletions: stats.deletions,
-            estimatedTokens: c.estimatedTokens,
-            commentCount: commentCountMap.get(c.id) ?? 0,
-          };
-        });
+      // Rank ALL chunks by importance heuristic and take top HIGH_PRIORITY_MAX
+      const rankedChunks: HighPriorityChunkEntry[] = allChunks.map((c) => {
+        const stats = chunkFileStats.get(c.id) ?? { additions: 0, deletions: 0 };
+        return {
+          id: c.slug,
+          additions: stats.additions,
+          deletions: stats.deletions,
+          estimatedTokens: c.estimatedTokens,
+          commentCount: commentCountMap.get(c.id) ?? 0,
+          findingCount: findingCountMap.get(c.id) ?? 0,
+        };
+      });
+
+      rankedChunks.sort((a, b) => chunkImportanceScore(b) - chunkImportanceScore(a));
+      const highPriorityChunks = rankedChunks.slice(0, HIGH_PRIORITY_MAX);
 
       const baseDir = join(homedir(), '.kaiju');
       const reviewDir = getReviewDir(reviewKey, baseDir);

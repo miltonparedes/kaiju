@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { parsePRReference } from '@kaiju/core';
 import { Command } from 'commander';
 
 import { detectGitRepo } from './shared.js';
@@ -86,6 +87,22 @@ export async function waitForServer(url: string, timeoutMs: number = 15000): Pro
   return false;
 }
 
+/**
+ * Build the concrete review URL for a given PR reference.
+ * Returns the base URL if prRef is undefined or unparseable.
+ */
+export function buildReviewUrl(baseUrl: string, prRef?: string): string {
+  if (!prRef) {
+    return baseUrl;
+  }
+  try {
+    const parsed = parsePRReference(prRef);
+    return `${baseUrl}/github/${parsed.owner}/${parsed.repo}/${parsed.pr}`;
+  } catch {
+    return baseUrl;
+  }
+}
+
 // ─── Command ────────────────────────────────────────────────────────────────────
 
 export const showCommand = new Command('show')
@@ -96,7 +113,7 @@ export const showCommand = new Command('show')
   .option('--json', 'Output server info as JSON')
   .action(
     async (
-      _prRef: string | undefined,
+      prRef: string | undefined,
       options: { port?: string; all?: boolean; json?: boolean },
     ) => {
       const port = Number.parseInt(options.port ?? '1954', 10);
@@ -108,7 +125,10 @@ export const showCommand = new Command('show')
         return;
       }
 
-      const url = `http://localhost:${port}`;
+      const baseUrl = `http://localhost:${port}`;
+
+      // Build concrete review URL when a PR reference is provided
+      const url = buildReviewUrl(baseUrl, prRef);
 
       // Build environment variables for the web server
       const env: Record<string, string> = {
@@ -166,8 +186,8 @@ export const showCommand = new Command('show')
         process.exit(0);
       });
 
-      // Wait for the server to be ready
-      const ready = await waitForServer(url);
+      // Wait for the server to be ready (always poll the base URL)
+      const ready = await waitForServer(baseUrl);
 
       if (!ready) {
         console.error('Error: Web server failed to start within 15 seconds.');

@@ -8,7 +8,7 @@ import { Command } from 'commander';
 
 import { type FetchSummaryData, formatFetchSummary } from './fetch.js';
 import { createStore } from './shared.js';
-import { formatShowStartup, openBrowser, waitForServer } from './show.js';
+import { buildReviewUrl, formatShowStartup, openBrowser, waitForServer } from './show.js';
 import { type ChunkSummaryEntry, type SplitSummaryData, formatSplitSummary } from './split.js';
 
 // ─── Command ────────────────────────────────────────────────────────────────────
@@ -218,10 +218,13 @@ export const reviewCommand = new Command('review')
 
       serverReady = true;
 
-      console.log(formatShowStartup({ port, url }));
+      // Construct the concrete review URL for this PR
+      const reviewUrl = buildReviewUrl(url, prRef);
 
-      // Open browser
-      openBrowser(url);
+      console.log(formatShowStartup({ port, url: reviewUrl }));
+
+      // Open browser to the specific PR review
+      openBrowser(reviewUrl);
 
       // Keep the process alive
       await new Promise(() => {});

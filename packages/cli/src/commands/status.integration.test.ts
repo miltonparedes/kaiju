@@ -5,7 +5,14 @@ import { join } from 'node:path';
 import { createDB, fetchGitHubPR, KaijuStore, splitAndPersist } from '@kaiju/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { formatStatusJson, formatStatusSummary, type StatusDisplayData } from './status.js';
+import {
+  HIGH_PRIORITY_MAX,
+  chunkImportanceScore,
+  formatStatusJson,
+  formatStatusSummary,
+  type HighPriorityChunkEntry,
+  type StatusDisplayData,
+} from './status.js';
 
 describe('status integration', () => {
   let tempDir: string;
@@ -84,6 +91,13 @@ describe('status integration', () => {
       }
     }
 
+    const findingCountMap = new Map<number, number>();
+    for (const finding of allFindings) {
+      if (finding.chunkId != null) {
+        findingCountMap.set(finding.chunkId, (findingCountMap.get(finding.chunkId) ?? 0) + 1);
+      }
+    }
+
     const chunkFileStats = new Map<number, { additions: number; deletions: number }>();
     for (const file of allFiles) {
       if (file.chunkId != null) {
@@ -94,18 +108,21 @@ describe('status integration', () => {
       }
     }
 
-    const highPriorityChunks = allChunks
-      .filter((c) => c.reviewPriority === 'high')
-      .map((c) => {
-        const stats = chunkFileStats.get(c.id) ?? { additions: 0, deletions: 0 };
-        return {
-          id: c.slug,
-          additions: stats.additions,
-          deletions: stats.deletions,
-          estimatedTokens: c.estimatedTokens,
-          commentCount: commentCountMap.get(c.id) ?? 0,
-        };
-      });
+    // Rank ALL chunks by importance heuristic and take top HIGH_PRIORITY_MAX
+    const rankedChunks: HighPriorityChunkEntry[] = allChunks.map((c) => {
+      const stats = chunkFileStats.get(c.id) ?? { additions: 0, deletions: 0 };
+      return {
+        id: c.slug,
+        additions: stats.additions,
+        deletions: stats.deletions,
+        estimatedTokens: c.estimatedTokens,
+        commentCount: commentCountMap.get(c.id) ?? 0,
+        findingCount: findingCountMap.get(c.id) ?? 0,
+      };
+    });
+
+    rankedChunks.sort((a, b) => chunkImportanceScore(b) - chunkImportanceScore(a));
+    const highPriorityChunks = rankedChunks.slice(0, HIGH_PRIORITY_MAX);
 
     return {
       repo: review.repo,
@@ -206,5 +223,55 @@ describe('status integration', () => {
 
     const output = formatStatusSummary(data);
     expect(output).toContain(`0/${data.chunkCount}`);
+  });
+
+  it('ranks chunks by importance heuristic: findings > comments > diff size', async () => {
+    await fetchGitHubPR(store, 'org', 'repo', 9999, mockGhRunner);
+    const reviewKey = 'github/org/repo/9999';
+    await splitAndPersist(store, reviewKey, { strategy: 'single-file' });
+
+    const allChunks = store.getChunks(reviewKey);
+    // We have 3 chunks (one per file). Add findings to the last chunk
+    // and comments to the middle chunk, so the last chunk should rank first.
+    const lastChunk = allChunks[allChunks.length - 1]!;
+    const middleChunk = allChunks[1]!;
+
+    await store.addFinding(reviewKey, {
+      chunkId: lastChunk.id,
+      reviewer: 'claude',
+      file: 'src/routes/api/users.ts',
+      line: 5,
+      severity: 'critical',
+      message: 'Critical issue',
+    });
+
+    await store.addComment(reviewKey, {
+      threadId: 'thread-rank-test',
+      chunkId: middleChunk.id,
+      file: 'src/auth/jwt.ts',
+      line: 1,
+      body: 'Comment on middle chunk',
+      author: 'reviewer',
+    });
+
+    const data = buildStatusData(reviewKey);
+
+    // The chunk with findings should be first, then the one with comments
+    expect(data.highPriorityChunks.length).toBeGreaterThanOrEqual(2);
+    expect(data.highPriorityChunks[0]!.findingCount).toBe(1);
+    expect(data.highPriorityChunks[0]!.id).toBe(lastChunk.slug);
+  });
+
+  it('shows high priority section even when no chunks have explicit high priority', async () => {
+    await fetchGitHubPR(store, 'org', 'repo', 9999, mockGhRunner);
+    const reviewKey = 'github/org/repo/9999';
+    await splitAndPersist(store, reviewKey, { strategy: 'directory' });
+
+    const data = buildStatusData(reviewKey);
+    const output = formatStatusSummary(data);
+
+    // All chunks should show up even without explicit review_priority === 'high'
+    expect(output).toContain('High priority:');
+    expect(data.highPriorityChunks.length).toBeGreaterThan(0);
   });
 });

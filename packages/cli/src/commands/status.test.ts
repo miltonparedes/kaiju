@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  HIGH_PRIORITY_MAX,
+  chunkImportanceScore,
   formatStatusJson,
   formatStatusSummary,
   statusCommand,
@@ -25,6 +27,10 @@ describe('status command', () => {
   it('has a --json option', () => {
     expect(statusCommand.options.some((o) => o.long === '--json')).toBe(true);
   });
+
+  it('has a --all option', () => {
+    expect(statusCommand.options.some((o) => o.long === '--all')).toBe(true);
+  });
 });
 
 describe('formatStatusSummary', () => {
@@ -46,6 +52,7 @@ describe('formatStatusSummary', () => {
         deletions: 210,
         estimatedTokens: 2800,
         commentCount: 2,
+        findingCount: 1,
       },
       {
         id: '005-db-migrations',
@@ -53,6 +60,7 @@ describe('formatStatusSummary', () => {
         deletions: 80,
         estimatedTokens: 3200,
         commentCount: 0,
+        findingCount: 0,
       },
       {
         id: '007-breaking-api',
@@ -60,6 +68,7 @@ describe('formatStatusSummary', () => {
         deletions: 400,
         estimatedTokens: 2500,
         commentCount: 1,
+        findingCount: 0,
       },
     ],
   };
@@ -166,6 +175,7 @@ describe('formatStatusJson', () => {
         deletions: 210,
         estimatedTokens: 2800,
         commentCount: 2,
+        findingCount: 1,
       },
     ],
   };
@@ -215,5 +225,143 @@ describe('formatStatusJson', () => {
   it('omits paths when reviewDir is not provided', () => {
     const parsed = JSON.parse(formatStatusJson(sampleData));
     expect(parsed.paths).toBeUndefined();
+  });
+
+  it('includes findingCount in high priority chunks JSON', () => {
+    const parsed = JSON.parse(formatStatusJson(sampleData));
+    expect(parsed.highPriorityChunks[0].findingCount).toBe(1);
+  });
+});
+
+describe('chunkImportanceScore', () => {
+  it('ranks findings highest', () => {
+    const withFindings = chunkImportanceScore({
+      findingCount: 1,
+      commentCount: 0,
+      additions: 0,
+      deletions: 0,
+    });
+    const withComments = chunkImportanceScore({
+      findingCount: 0,
+      commentCount: 5,
+      additions: 0,
+      deletions: 0,
+    });
+    const withDiff = chunkImportanceScore({
+      findingCount: 0,
+      commentCount: 0,
+      additions: 400,
+      deletions: 500,
+    });
+    expect(withFindings).toBeGreaterThan(withComments);
+    expect(withComments).toBeGreaterThan(withDiff);
+  });
+
+  it('returns 0 for empty chunk', () => {
+    expect(
+      chunkImportanceScore({ findingCount: 0, commentCount: 0, additions: 0, deletions: 0 }),
+    ).toBe(0);
+  });
+
+  it('combines all factors', () => {
+    const score = chunkImportanceScore({
+      findingCount: 2,
+      commentCount: 3,
+      additions: 100,
+      deletions: 50,
+    });
+    expect(score).toBe(2 * 10000 + 3 * 1000 + 150);
+  });
+});
+
+describe('HIGH_PRIORITY_MAX', () => {
+  it('is 5', () => {
+    expect(HIGH_PRIORITY_MAX).toBe(5);
+  });
+});
+
+describe('formatStatusSummary with findings', () => {
+  it('shows finding count in high priority chunk lines', () => {
+    const data: StatusDisplayData = {
+      repo: 'org/repo',
+      pr: 42,
+      title: 'Test',
+      chunkCount: 2,
+      fileCount: 3,
+      totalAdditions: 100,
+      totalDeletions: 50,
+      reviewedCount: 0,
+      findingCount: 2,
+      commentCount: 1,
+      highPriorityChunks: [
+        {
+          id: 'chunk-a',
+          additions: 80,
+          deletions: 30,
+          estimatedTokens: 500,
+          commentCount: 1,
+          findingCount: 2,
+        },
+      ],
+    };
+    const output = formatStatusSummary(data);
+    expect(output).toContain('2 findings');
+    expect(output).toContain('1 comment');
+  });
+
+  it('omits finding label when findingCount is 0', () => {
+    const data: StatusDisplayData = {
+      repo: 'org/repo',
+      pr: 42,
+      title: 'Test',
+      chunkCount: 1,
+      fileCount: 1,
+      totalAdditions: 10,
+      totalDeletions: 5,
+      reviewedCount: 0,
+      findingCount: 0,
+      commentCount: 0,
+      highPriorityChunks: [
+        {
+          id: 'chunk-b',
+          additions: 10,
+          deletions: 5,
+          estimatedTokens: 100,
+          commentCount: 0,
+          findingCount: 0,
+        },
+      ],
+    };
+    const output = formatStatusSummary(data);
+    expect(output).not.toContain('finding');
+    expect(output).toContain('0 comments');
+  });
+
+  it('uses singular "finding" for count of 1', () => {
+    const data: StatusDisplayData = {
+      repo: 'org/repo',
+      pr: 42,
+      title: 'Test',
+      chunkCount: 1,
+      fileCount: 1,
+      totalAdditions: 10,
+      totalDeletions: 5,
+      reviewedCount: 0,
+      findingCount: 1,
+      commentCount: 0,
+      highPriorityChunks: [
+        {
+          id: 'chunk-c',
+          additions: 10,
+          deletions: 5,
+          estimatedTokens: 100,
+          commentCount: 0,
+          findingCount: 1,
+        },
+      ],
+    };
+    const output = formatStatusSummary(data);
+    expect(output).toContain('1 finding');
+    expect(output).not.toContain('1 findings');
   });
 });

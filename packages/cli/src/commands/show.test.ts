@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatShowStartup, formatShowJson, showCommand } from './show.js';
+import { buildReviewUrl, formatShowJson, formatShowStartup, showCommand } from './show.js';
 
 describe('show command', () => {
   it('has the correct name', () => {
@@ -60,5 +60,35 @@ describe('formatShowJson', () => {
     const parsed = JSON.parse(formatShowJson({ port: 1954, url: 'http://localhost:1954' }));
     expect(parsed.url).toBe('http://localhost:1954');
     expect(parsed.port).toBe(1954);
+  });
+});
+
+describe('buildReviewUrl', () => {
+  const base = 'http://localhost:1954';
+
+  it('returns base URL when prRef is undefined', () => {
+    expect(buildReviewUrl(base)).toBe(base);
+  });
+
+  it('returns base URL when prRef is invalid', () => {
+    expect(buildReviewUrl(base, 'not-a-ref')).toBe(base);
+  });
+
+  it('returns concrete review URL for shorthand org/repo#N', () => {
+    expect(buildReviewUrl(base, 'acme/widgets#42')).toBe(
+      'http://localhost:1954/github/acme/widgets/42',
+    );
+  });
+
+  it('returns concrete review URL for GitHub URL', () => {
+    expect(buildReviewUrl(base, 'https://github.com/org/repo/pull/123')).toBe(
+      'http://localhost:1954/github/org/repo/123',
+    );
+  });
+
+  it('works with custom port', () => {
+    expect(buildReviewUrl('http://localhost:3456', 'org/repo#7')).toBe(
+      'http://localhost:3456/github/org/repo/7',
+    );
   });
 });
