@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { filePathToId, splitPatchByFile } from './diffViewerUtils.js';
+import { filePathToId, splitPatchByFile, unquoteGitPath } from './diffViewerUtils.js';
 
 describe('filePathToId', () => {
   it('replaces non-alphanumeric chars with hyphens', () => {
@@ -120,5 +120,90 @@ index abc..def 100644
     // Both hunks should be in the same patch
     expect(result[0]!.patch).toContain('added at 11');
     expect(result[0]!.patch).toContain('added at 51');
+  });
+
+  it('splits a quoted-path patch (non-ASCII file name)', () => {
+    const patch = `diff --git "a/src/caf\\303\\251.ts" "b/src/caf\\303\\251.ts"
+index abc1234..def5678 100644
+--- "a/src/caf\\303\\251.ts"
++++ "b/src/caf\\303\\251.ts"
+@@ -1,3 +1,4 @@
+ import { brew } from 'coffee';
++import { latte } from './latte';
+ 
+ export function order() {`;
+
+    const result = splitPatchByFile(patch);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.filePath).toBe('src/café.ts');
+    expect(result[0]!.patch).toContain('diff --git');
+    expect(result[0]!.patch).toContain('import { latte }');
+  });
+
+  it('splits multi-file patch with mixed quoted and unquoted paths', () => {
+    const patch = `diff --git a/src/normal.ts b/src/normal.ts
+index abc..def 100644
+--- a/src/normal.ts
++++ b/src/normal.ts
+@@ -1,2 +1,3 @@
+ const x = 1;
++const y = 2;
+diff --git "a/src/\\346\\227\\245\\346\\234\\254\\350\\252\\236.ts" "b/src/\\346\\227\\245\\346\\234\\254\\350\\252\\236.ts"
+index 111..222 100644
+--- "a/src/\\346\\227\\245\\346\\234\\254\\350\\252\\236.ts"
++++ "b/src/\\346\\227\\245\\346\\234\\254\\350\\252\\236.ts"
+@@ -1,2 +1,3 @@
+ export const lang = 'ja';
++export const greeting = 'こんにちは';`;
+
+    const result = splitPatchByFile(patch);
+    expect(result).toHaveLength(2);
+    expect(result[0]!.filePath).toBe('src/normal.ts');
+    expect(result[1]!.filePath).toBe('src/日本語.ts');
+  });
+
+  it('handles quoted paths with spaces and special characters', () => {
+    const patch = `diff --git "a/src/file (copy).tsx" "b/src/file (copy).tsx"
+index abc..def 100644
+--- "a/src/file (copy).tsx"
++++ "b/src/file (copy).tsx"
+@@ -1 +1,2 @@
+ export const a = 1;
++export const b = 2;`;
+
+    const result = splitPatchByFile(patch);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.filePath).toBe('src/file (copy).tsx');
+  });
+});
+
+describe('unquoteGitPath', () => {
+  it('returns unquoted strings as-is', () => {
+    expect(unquoteGitPath('src/auth.ts')).toBe('src/auth.ts');
+  });
+
+  it('strips quotes from a simple quoted string', () => {
+    expect(unquoteGitPath('"hello"')).toBe('hello');
+  });
+
+  it('decodes octal escape sequences for UTF-8 (café)', () => {
+    // É = \\303\\251 in octal (UTF-8 bytes 0xC3, 0xA9)
+    expect(unquoteGitPath('"caf\\303\\251.ts"')).toBe('café.ts');
+  });
+
+  it('decodes octal escape sequences for CJK characters', () => {
+    // 日 = \\346\\227\\245 in octal (UTF-8 bytes 0xE6, 0x97, 0xA5)
+    expect(unquoteGitPath('"\\346\\227\\245.ts"')).toBe('日.ts');
+  });
+
+  it('handles backslash escapes (\\n, \\t, \\\\, \\")', () => {
+    expect(unquoteGitPath('"hello\\nworld"')).toBe('hello\nworld');
+    expect(unquoteGitPath('"hello\\tworld"')).toBe('hello\tworld');
+    expect(unquoteGitPath('"hello\\\\world"')).toBe('hello\\world');
+    expect(unquoteGitPath('"hello\\"world"')).toBe('hello"world');
+  });
+
+  it('handles mixed octal and plain characters', () => {
+    expect(unquoteGitPath('"src/caf\\303\\251/main.ts"')).toBe('src/café/main.ts');
   });
 });

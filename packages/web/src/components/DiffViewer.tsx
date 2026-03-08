@@ -103,8 +103,8 @@ function SingleFileDiff({
   onLineSelected?: (range: SelectedLineRange | null, filePath: string) => void;
 }) {
   const annotations = useMemo(
-    () => buildFileAnnotations(findings, comments, filePath),
-    [findings, comments, filePath],
+    () => buildFileAnnotations(findings, comments, filePath, patch),
+    [findings, comments, filePath, patch],
   );
 
   const handleLineSelected = useCallback(

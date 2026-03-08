@@ -9,6 +9,7 @@ import type {
   DashboardComment,
   DashboardFinding,
 } from '../routes/$provider/$org/$repo/$pr/types.js';
+import { splitPatchByFile } from './diffViewerUtils.js';
 
 // ─── Annotation types ─────────────────────────────────────────────────────────
 
@@ -72,21 +73,121 @@ export function getSeverityIcon(_severity: string): string {
   return '●';
 }
 
+// ─── Diff hunk parsing for side detection ─────────────────────────────────────
+
+/**
+ * Parse diff hunks from a single-file patch string.
+ * Returns:
+ * - additionLines: line numbers (new file) for `+` lines (pure additions)
+ * - deletionLines: line numbers (old file) for `-` lines (pure deletions)
+ * - contextNewLines: line numbers (new file) for context lines (present in both)
+ * - contextOldLines: line numbers (old file) for context lines
+ */
+export function parseDiffSides(patch: string): {
+  additionLines: Set<number>;
+  deletionLines: Set<number>;
+} {
+  const additionLines = new Set<number>();
+  const deletionLines = new Set<number>();
+  const lines = patch.split('\n');
+
+  let oldLine = 0;
+  let newLine = 0;
+
+  for (const line of lines) {
+    // Parse @@ header
+    const hunkMatch = line.match(/^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@/);
+    if (hunkMatch) {
+      oldLine = parseInt(hunkMatch[1]!, 10);
+      newLine = parseInt(hunkMatch[3]!, 10);
+      continue;
+    }
+
+    // Skip non-diff lines (headers, etc.)
+    if (oldLine === 0 && newLine === 0) {
+      continue;
+    }
+
+    if (line.startsWith('+')) {
+      // Pure addition — only exists in new file
+      additionLines.add(newLine);
+      newLine++;
+    } else if (line.startsWith('-')) {
+      // Pure deletion — only exists in old file
+      deletionLines.add(oldLine);
+      oldLine++;
+    } else if (line.startsWith(' ') || line === '') {
+      // Context line — present in both files.
+      // We add to additionLines so these are findable on the additions side.
+      additionLines.add(newLine);
+      oldLine++;
+      newLine++;
+    }
+    // Ignore \ No newline at end of file
+  }
+
+  return { additionLines, deletionLines };
+}
+
+/**
+ * Determine the annotation side for a given line number within a file's patch.
+ *
+ * The heuristic: if the line number corresponds to a `-` (deletion) line in
+ * the old file, use `deletions`. Otherwise (addition, context, or unknown),
+ * use `additions`. We check deletions first because deletion-side lines are
+ * the special case — most annotations target the new file.
+ */
+export function determineAnnotationSide(
+  lineNumber: number,
+  filePatch: string | undefined,
+): 'additions' | 'deletions' {
+  if (!filePatch) {
+    return 'additions';
+  }
+
+  const { additionLines, deletionLines } = parseDiffSides(filePatch);
+
+  // If the line is a pure deletion (only in old file), use deletions side
+  if (deletionLines.has(lineNumber) && !additionLines.has(lineNumber)) {
+    return 'deletions';
+  }
+
+  // Otherwise (addition, context, or unknown) use additions side
+  return 'additions';
+}
+
+/**
+ * Build a map from file path to its individual patch string for a chunk.
+ * Used to look up per-file patches for side detection.
+ */
+export function buildFilePatchMap(chunkPatch: string | null): Map<string, string> {
+  if (!chunkPatch) {
+    return new Map();
+  }
+  const filePatches = splitPatchByFile(chunkPatch);
+  const map = new Map<string, string>();
+  for (const fp of filePatches) {
+    map.set(fp.filePath, fp.patch);
+  }
+  return map;
+}
+
 // ─── Build annotations ────────────────────────────────────────────────────────
 
 /**
  * Build lineAnnotations for a specific file from findings.
  * Only includes findings that target the given file path.
- * Each finding becomes an annotation at its line number on the additions side.
+ * Determines annotation side by parsing the diff hunks when a filePatch is provided.
  */
 export function buildFindingAnnotations(
   findings: DashboardFinding[],
   filePath: string,
+  filePatch?: string,
 ): KaijuAnnotation[] {
   return findings
     .filter((f) => f.file === filePath && f.line != null)
     .map((f) => ({
-      side: 'additions' as const,
+      side: determineAnnotationSide(f.line!, filePatch),
       lineNumber: f.line!,
       metadata: { kind: 'finding' as const, finding: f },
     }));
@@ -95,10 +196,12 @@ export function buildFindingAnnotations(
 /**
  * Build lineAnnotations for a specific file from comments.
  * Groups comments by threadId, placing the thread at the first comment's line.
+ * Determines annotation side by parsing the diff hunks when a filePatch is provided.
  */
 export function buildCommentAnnotations(
   comments: DashboardComment[],
   filePath: string,
+  filePatch?: string,
 ): KaijuAnnotation[] {
   // Filter comments for this file that have a line reference
   const fileComments = comments.filter((c) => c.file === filePath && c.line != null);
@@ -125,7 +228,7 @@ export function buildCommentAnnotations(
     });
     const firstLine = sorted[0]?.line ?? 1;
     annotations.push({
-      side: 'additions',
+      side: determineAnnotationSide(firstLine, filePatch),
       lineNumber: firstLine,
       metadata: { kind: 'comment-thread', threadId, comments: sorted },
     });
@@ -137,13 +240,15 @@ export function buildCommentAnnotations(
 /**
  * Merge finding and comment annotations for a single file.
  * Sorted by line number for stable rendering.
+ * Accepts an optional filePatch for accurate side detection.
  */
 export function buildFileAnnotations(
   findings: DashboardFinding[],
   comments: DashboardComment[],
   filePath: string,
+  filePatch?: string,
 ): KaijuAnnotation[] {
-  const findingAnns = buildFindingAnnotations(findings, filePath);
-  const commentAnns = buildCommentAnnotations(comments, filePath);
+  const findingAnns = buildFindingAnnotations(findings, filePath, filePatch);
+  const commentAnns = buildCommentAnnotations(comments, filePath, filePatch);
   return [...findingAnns, ...commentAnns].toSorted((a, b) => a.lineNumber - b.lineNumber);
 }

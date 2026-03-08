@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils.js';
 
 import type { DashboardFinding } from '../routes/$provider/$org/$repo/$pr/types.js';
 import { getSeverityStyle } from './findingsCommentsUtils.js';
+import { detectLanguage, useCodeHighlight } from './useCodeHighlight.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -31,17 +32,30 @@ function ReviewerIcon({ reviewer }: { reviewer: string }) {
 
 // ─── Code Suggestion Block ────────────────────────────────────────────────────
 
-function CodeSuggestionBlock({ suggestion }: { suggestion: string }) {
+function CodeSuggestionBlock({ suggestion, filePath }: { suggestion: string; filePath: string }) {
+  const lang = detectLanguage(filePath);
+  const highlightedHtml = useCodeHighlight(suggestion, lang);
+
   return (
     <div className="rounded-md border border-border bg-background/80">
-      <div className="border-b border-border px-3 py-1.5">
+      <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
         <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
           Suggested fix
         </span>
+        {lang !== 'text' ? (
+          <span className="text-[10px] text-muted-foreground/60">{lang}</span>
+        ) : null}
       </div>
-      <pre className="overflow-x-auto p-3 text-xs leading-relaxed">
-        <code className="text-foreground/90">{suggestion}</code>
-      </pre>
+      {highlightedHtml ? (
+        <div
+          className="overflow-x-auto p-3 text-xs leading-relaxed [&_.shiki]:!bg-transparent [&_pre]:!m-0 [&_pre]:!p-0"
+          dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+        />
+      ) : (
+        <pre className="overflow-x-auto p-3 text-xs leading-relaxed">
+          <code className="text-foreground/90">{suggestion}</code>
+        </pre>
+      )}
     </div>
   );
 }
@@ -120,9 +134,9 @@ export function FindingAnnotation({ finding, defaultExpanded = false }: FindingA
 
           {/* Code suggestion */}
           {finding.codeSuggestion ? (
-            <CodeSuggestionBlock suggestion={finding.codeSuggestion} />
+            <CodeSuggestionBlock suggestion={finding.codeSuggestion} filePath={finding.file} />
           ) : finding.suggestion ? (
-            <CodeSuggestionBlock suggestion={finding.suggestion} />
+            <CodeSuggestionBlock suggestion={finding.suggestion} filePath={finding.file} />
           ) : null}
 
           {/* Agent prompt input */}
