@@ -1,5 +1,6 @@
 import { createServerFn } from '@tanstack/react-start';
 
+import { getChunkFromStore, getChunksFromStore } from './dataAccess.js';
 import { getStore, setChunkStatus } from './store.js';
 
 /**
@@ -14,7 +15,7 @@ export const getChunks = createServerFn({ method: 'GET' })
   })
   .handler(async ({ data }) => {
     const store = getStore();
-    return store.getChunks(data.reviewKey);
+    return getChunksFromStore(store, data.reviewKey);
   });
 
 /**
@@ -32,17 +33,7 @@ export const getChunk = createServerFn({ method: 'GET' })
   })
   .handler(async ({ data }) => {
     const store = getStore();
-    const chunks = store.getChunks(data.reviewKey);
-    const chunk = chunks.find((c) => c.slug === data.chunkSlug);
-    if (!chunk) {
-      throw new Error(`Chunk not found: ${data.chunkSlug}`);
-    }
-
-    // Get files assigned to this chunk
-    const allFiles = store.getFiles(data.reviewKey);
-    const chunkFiles = allFiles.filter((f) => f.chunkId === chunk.id);
-
-    return { ...chunk, files: chunkFiles };
+    return getChunkFromStore(store, data.reviewKey, data.chunkSlug);
   });
 
 /** Resolve a chunk by slug from a review, throwing if not found. */

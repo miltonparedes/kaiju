@@ -1,5 +1,7 @@
 import { createServerFn } from '@tanstack/react-start';
 
+import { getDashboardReviewsFromStore, getReviewFromStore } from './dataAccess.js';
+import type { DashboardReviewData } from './dataAccess.js';
 import { getStore } from './store.js';
 
 /**
@@ -11,20 +13,7 @@ export const getReviews = createServerFn({ method: 'GET' }).handler(async () => 
 });
 
 /** Dashboard card shape returned by getDashboardReviews. */
-export interface DashboardReview {
-  key: string;
-  provider: string;
-  repo: string;
-  pr: number;
-  title: string;
-  url: string;
-  status: string;
-  fileCount: number;
-  chunkCount: number;
-  reviewedChunkCount: number;
-  findingCount: number;
-  updatedAt: number;
-}
+export type DashboardReview = DashboardReviewData;
 
 /**
  * List all reviews enriched with stats for the dashboard cards.
@@ -34,29 +23,7 @@ export interface DashboardReview {
 export const getDashboardReviews = createServerFn({ method: 'GET' }).handler(
   async (): Promise<DashboardReview[]> => {
     const store = getStore();
-    const reviews = store.listReviews();
-
-    return reviews.map((r) => {
-      const files = store.getFiles(r.key);
-      const chunks = store.getChunks(r.key);
-      const findings = store.getFindings(r.key);
-      const reviewedChunkCount = chunks.filter((c) => c.status === 'reviewed').length;
-
-      return {
-        key: r.key,
-        provider: r.provider,
-        repo: r.repo,
-        pr: r.pr,
-        title: r.title,
-        url: r.url,
-        status: r.status,
-        fileCount: files.length,
-        chunkCount: chunks.length,
-        reviewedChunkCount,
-        findingCount: findings.length,
-        updatedAt: r.updatedAt,
-      };
-    });
+    return getDashboardReviewsFromStore(store);
   },
 );
 
@@ -72,9 +39,5 @@ export const getReview = createServerFn({ method: 'GET' })
   })
   .handler(async ({ data }) => {
     const store = getStore();
-    const review = store.getReview(data.key);
-    if (!review) {
-      throw new Error(`Review not found: ${data.key}`);
-    }
-    return review;
+    return getReviewFromStore(store, data.key);
   });

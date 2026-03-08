@@ -45,6 +45,7 @@ diff --git a/src/routes/api.ts b/src/routes/api.ts
 const MOCK_PR_VIEW_JSON = JSON.stringify({
   title: 'Migrate auth to sessions',
   number: 9999,
+  body: 'This PR migrates authentication from JWT tokens to session-based auth.',
   baseRefName: 'main',
   headRefName: 'feature/auth-sessions',
   url: 'https://github.com/acme/widgets/pull/9999',
@@ -112,9 +113,12 @@ afterEach(async () => {
 // ─── parseGhPrViewJson ─────────────────────────────────────────────────────────
 
 describe('parseGhPrViewJson', () => {
-  it('extracts title, base, head, url', () => {
+  it('extracts title, body, base, head, url', () => {
     const result = parseGhPrViewJson(MOCK_PR_VIEW_JSON);
     expect(result.title).toBe('Migrate auth to sessions');
+    expect(result.body).toBe(
+      'This PR migrates authentication from JWT tokens to session-based auth.',
+    );
     expect(result.base).toBe('main');
     expect(result.head).toBe('feature/auth-sessions');
     expect(result.url).toBe('https://github.com/acme/widgets/pull/9999');

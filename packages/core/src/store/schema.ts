@@ -10,6 +10,7 @@ export const reviews = sqliteTable('reviews', {
   repo: text('repo').notNull(),
   pr: integer('pr').notNull(),
   title: text('title').notNull().default(''),
+  body: text('body').notNull().default(''),
   url: text('url').notNull().default(''),
   base: text('base').notNull().default(''),
   head: text('head').notNull().default(''),

@@ -7,6 +7,16 @@ import type { KaijuDB } from '@kaiju/core';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import {
+  getChunkFromStore,
+  getChunksFromStore,
+  getCommentsFromStore,
+  getDashboardReviewsFromStore,
+  getFilesFromStore,
+  getFindingsFromStore,
+  getReviewFromStore,
+} from './dataAccess.js';
+
 // ─── Test helpers ────────────────────────────────────────────────────────────────
 
 /**
@@ -98,292 +108,9 @@ async function seedTestData(store: KaijuStore) {
   return { review, chunk1, chunk2 };
 }
 
-// ─── Tests for store-based server function logic ─────────────────────────────────
+// ─── Tests for data-access functions used by server functions ─────────────────
 
-describe('Server function logic: reviews', () => {
-  let store: KaijuStore;
-  let cleanup: () => void;
-
-  beforeEach(() => {
-    const ctx = createTestStore();
-    store = ctx.store;
-    cleanup = ctx.cleanup;
-  });
-
-  afterEach(() => {
-    cleanup();
-  });
-
-  it('listReviews returns empty array when no reviews exist', () => {
-    const reviews = store.listReviews();
-    expect(reviews).toEqual([]);
-  });
-
-  it('listReviews returns all reviews', async () => {
-    await store.createReview({
-      key: 'github/acme/widgets/1',
-      provider: 'github',
-      repo: 'acme/widgets',
-      pr: 1,
-      title: 'PR 1',
-    });
-    await store.createReview({
-      key: 'github/acme/widgets/2',
-      provider: 'github',
-      repo: 'acme/widgets',
-      pr: 2,
-      title: 'PR 2',
-    });
-
-    const reviews = store.listReviews();
-    expect(reviews).toHaveLength(2);
-    expect(reviews.map((r) => r.pr)).toEqual([1, 2]);
-  });
-
-  it('getReview returns review by key', async () => {
-    await store.createReview({
-      key: 'github/acme/widgets/42',
-      provider: 'github',
-      repo: 'acme/widgets',
-      pr: 42,
-      title: 'Test PR',
-    });
-
-    const review = store.getReview('github/acme/widgets/42');
-    expect(review).toBeDefined();
-    expect(review!.pr).toBe(42);
-    expect(review!.title).toBe('Test PR');
-  });
-
-  it('getReview returns undefined for missing key', () => {
-    const review = store.getReview('github/nonexistent/repo/999');
-    expect(review).toBeUndefined();
-  });
-});
-
-describe('Server function logic: chunks', () => {
-  let store: KaijuStore;
-  let cleanup: () => void;
-
-  beforeEach(async () => {
-    const ctx = createTestStore();
-    store = ctx.store;
-    cleanup = ctx.cleanup;
-    await seedTestData(store);
-  });
-
-  afterEach(() => {
-    cleanup();
-  });
-
-  it('getChunks returns all chunks for a review', () => {
-    const chunks = store.getChunks('github/acme/widgets/42');
-    expect(chunks).toHaveLength(2);
-    expect(chunks.map((c) => c.slug)).toContain('001-theme');
-    expect(chunks.map((c) => c.slug)).toContain('002-utils');
-  });
-
-  it('getChunks returns empty for missing review', () => {
-    const chunks = store.getChunks('github/nonexistent/repo/999');
-    expect(chunks).toEqual([]);
-  });
-
-  it('getChunk returns chunk with files', () => {
-    const chunks = store.getChunks('github/acme/widgets/42');
-    const chunk = chunks.find((c) => c.slug === '001-theme');
-    expect(chunk).toBeDefined();
-    expect(chunk!.title).toBe('Theme changes');
-
-    const allFiles = store.getFiles('github/acme/widgets/42');
-    const chunkFiles = allFiles.filter((f) => f.chunkId === chunk!.id);
-    expect(chunkFiles).toHaveLength(2);
-    expect(chunkFiles.map((f) => f.path)).toContain('src/theme.ts');
-    expect(chunkFiles.map((f) => f.path)).toContain('src/colors.ts');
-  });
-
-  it('markChunkReviewed updates chunk status', () => {
-    const chunks = store.getChunks('github/acme/widgets/42');
-    const chunk = chunks.find((c) => c.slug === '001-theme')!;
-
-    expect(chunk.status).toBe('pending');
-
-    // Simulate what markChunkReviewed does
-    const db = (store as unknown as { db: KaijuDB }).db;
-    db.update(chunksTable).set({ status: 'reviewed' }).where(eq(chunksTable.id, chunk.id)).run();
-
-    const updated = store.getChunks('github/acme/widgets/42');
-    const updatedChunk = updated.find((c) => c.slug === '001-theme')!;
-    expect(updatedChunk.status).toBe('reviewed');
-  });
-});
-
-describe('Server function logic: findings', () => {
-  let store: KaijuStore;
-  let cleanup: () => void;
-
-  beforeEach(async () => {
-    const ctx = createTestStore();
-    store = ctx.store;
-    cleanup = ctx.cleanup;
-    await seedTestData(store);
-  });
-
-  afterEach(() => {
-    cleanup();
-  });
-
-  it('getFindings returns all findings for a review', () => {
-    const findings = store.getFindings('github/acme/widgets/42');
-    expect(findings).toHaveLength(1);
-    expect(findings[0]!.message).toBe('Consider using CSS custom properties');
-  });
-
-  it('getFindings filters by chunk slug', () => {
-    const allFindings = store.getFindings('github/acme/widgets/42');
-    const chunks = store.getChunks('github/acme/widgets/42');
-    const themeChunk = chunks.find((c) => c.slug === '001-theme')!;
-    const utilsChunk = chunks.find((c) => c.slug === '002-utils')!;
-
-    // Filter for theme chunk
-    const themeFindings = allFindings.filter((f) => f.chunkId === themeChunk.id);
-    expect(themeFindings).toHaveLength(1);
-
-    // Filter for utils chunk
-    const utilsFindings = allFindings.filter((f) => f.chunkId === utilsChunk.id);
-    expect(utilsFindings).toHaveLength(0);
-  });
-});
-
-describe('Server function logic: comments', () => {
-  let store: KaijuStore;
-  let cleanup: () => void;
-
-  beforeEach(async () => {
-    const ctx = createTestStore();
-    store = ctx.store;
-    cleanup = ctx.cleanup;
-    await seedTestData(store);
-  });
-
-  afterEach(() => {
-    cleanup();
-  });
-
-  it('getComments returns all comments for a review', () => {
-    const comments = store.getComments('github/acme/widgets/42');
-    expect(comments).toHaveLength(1);
-    expect(comments[0]!.body).toBe('Should this use CSS variables?');
-  });
-
-  it('getComments filters by chunk slug', () => {
-    const allComments = store.getComments('github/acme/widgets/42');
-    const chunks = store.getChunks('github/acme/widgets/42');
-    const themeChunk = chunks.find((c) => c.slug === '001-theme')!;
-    const utilsChunk = chunks.find((c) => c.slug === '002-utils')!;
-
-    // Filter for theme chunk
-    const themeComments = allComments.filter((c) => c.chunkId === themeChunk.id);
-    expect(themeComments).toHaveLength(1);
-
-    // Filter for utils chunk
-    const utilsComments = allComments.filter((c) => c.chunkId === utilsChunk.id);
-    expect(utilsComments).toHaveLength(0);
-  });
-});
-
-describe('Cross-layer consistency: CLI writes, server functions read', () => {
-  let store: KaijuStore;
-  let cleanup: () => void;
-
-  beforeEach(async () => {
-    const ctx = createTestStore();
-    store = ctx.store;
-    cleanup = ctx.cleanup;
-    await seedTestData(store);
-  });
-
-  afterEach(() => {
-    cleanup();
-  });
-
-  it('review data from store matches expected fields', () => {
-    const review = store.getReview('github/acme/widgets/42');
-    expect(review).toBeDefined();
-    expect(review!.key).toBe('github/acme/widgets/42');
-    expect(review!.provider).toBe('github');
-    expect(review!.repo).toBe('acme/widgets');
-    expect(review!.pr).toBe(42);
-    expect(review!.title).toBe('Add dark mode');
-    expect(review!.status).toBe('split');
-  });
-
-  it('chunks include all expected data fields', () => {
-    const chunks = store.getChunks('github/acme/widgets/42');
-    const chunk = chunks.find((c) => c.slug === '001-theme')!;
-    expect(chunk.title).toBe('Theme changes');
-    expect(chunk.description).toBe('Dark mode theme implementation');
-    expect(chunk.reviewPriority).toBe('high');
-    expect(chunk.estimatedTokens).toBe(500);
-    expect(chunk.status).toBe('pending');
-    expect(chunk.patch).toContain('diff --git');
-  });
-
-  it('files are correctly associated with chunks', () => {
-    const chunks = store.getChunks('github/acme/widgets/42');
-    const files = store.getFiles('github/acme/widgets/42');
-
-    const themeChunk = chunks.find((c) => c.slug === '001-theme')!;
-    const utilsChunk = chunks.find((c) => c.slug === '002-utils')!;
-
-    const themeFiles = files.filter((f) => f.chunkId === themeChunk.id);
-    const utilsFiles = files.filter((f) => f.chunkId === utilsChunk.id);
-
-    expect(themeFiles).toHaveLength(2);
-    expect(utilsFiles).toHaveLength(1);
-    expect(utilsFiles[0]!.path).toBe('src/utils.ts');
-  });
-
-  it('findings are correctly associated with chunks', () => {
-    const chunks = store.getChunks('github/acme/widgets/42');
-    const findings = store.getFindings('github/acme/widgets/42');
-
-    const themeChunk = chunks.find((c) => c.slug === '001-theme')!;
-    const findingsForTheme = findings.filter((f) => f.chunkId === themeChunk.id);
-
-    expect(findingsForTheme).toHaveLength(1);
-    expect(findingsForTheme[0]!.severity).toBe('suggestion');
-    expect(findingsForTheme[0]!.file).toBe('src/theme.ts');
-    expect(findingsForTheme[0]!.line).toBe(5);
-  });
-
-  it('comments are correctly associated with chunks', () => {
-    const chunks = store.getChunks('github/acme/widgets/42');
-    const comments = store.getComments('github/acme/widgets/42');
-
-    const themeChunk = chunks.find((c) => c.slug === '001-theme')!;
-    const commentsForTheme = comments.filter((c) => c.chunkId === themeChunk.id);
-
-    expect(commentsForTheme).toHaveLength(1);
-    expect(commentsForTheme[0]!.author).toBe('reviewer1');
-    expect(commentsForTheme[0]!.file).toBe('src/theme.ts');
-    expect(commentsForTheme[0]!.line).toBe(10);
-  });
-
-  it('route parameter parsing works for review key construction', () => {
-    // Simulate what route loaders do: construct key from URL params
-    const params = { provider: 'github', org: 'acme', repo: 'widgets', pr: '42' };
-    const reviewKey = `${params.provider}/${params.org}/${params.repo}/${params.pr}`;
-    expect(reviewKey).toBe('github/acme/widgets/42');
-
-    const review = store.getReview(reviewKey);
-    expect(review).toBeDefined();
-    expect(review!.pr).toBe(42);
-  });
-});
-
-// ─── Dashboard data enrichment ──────────────────────────────────────────────────
-
-describe('Dashboard review enrichment', () => {
+describe('Data access: getDashboardReviewsFromStore', () => {
   let store: KaijuStore;
   let cleanup: () => void;
 
@@ -398,43 +125,38 @@ describe('Dashboard review enrichment', () => {
   });
 
   it('returns empty array when no reviews exist', () => {
-    const reviews = store.listReviews();
+    const reviews = getDashboardReviewsFromStore(store);
     expect(reviews).toEqual([]);
   });
 
   it('enriches a review with file, chunk, and finding counts', async () => {
     await seedTestData(store);
-    const reviews = store.listReviews();
+    const reviews = getDashboardReviewsFromStore(store);
     expect(reviews).toHaveLength(1);
 
     const r = reviews[0]!;
-    const files = store.getFiles(r.key);
-    const chunks = store.getChunks(r.key);
-    const findings = store.getFindings(r.key);
-    const reviewedChunkCount = chunks.filter((c) => c.status === 'reviewed').length;
-
-    expect(files.length).toBe(3);
-    expect(chunks.length).toBe(2);
-    expect(findings.length).toBe(1);
-    expect(reviewedChunkCount).toBe(0);
+    expect(r.key).toBe('github/acme/widgets/42');
+    expect(r.fileCount).toBe(3);
+    expect(r.chunkCount).toBe(2);
+    expect(r.findingCount).toBe(1);
+    expect(r.reviewedChunkCount).toBe(0);
+    expect(r.title).toBe('Add dark mode');
   });
 
   it('tracks reviewed chunk count after marking chunk reviewed', async () => {
     await seedTestData(store);
+
     const chunks = store.getChunks('github/acme/widgets/42');
     const chunk = chunks[0]!;
-
-    // Mark chunk as reviewed
     const db = (store as unknown as { db: KaijuDB }).db;
     db.update(chunksTable).set({ status: 'reviewed' }).where(eq(chunksTable.id, chunk.id)).run();
 
-    const updatedChunks = store.getChunks('github/acme/widgets/42');
-    const reviewedCount = updatedChunks.filter((c) => c.status === 'reviewed').length;
-    expect(reviewedCount).toBe(1);
+    const reviews = getDashboardReviewsFromStore(store);
+    expect(reviews[0]!.reviewedChunkCount).toBe(1);
   });
 
   it('handles multiple reviews independently', async () => {
-    await seedTestData(store); // github/acme/widgets/42
+    await seedTestData(store);
 
     await store.createReview({
       key: 'github/acme/other/10',
@@ -444,19 +166,261 @@ describe('Dashboard review enrichment', () => {
       title: 'Another PR',
     });
 
-    const reviews = store.listReviews();
+    const reviews = getDashboardReviewsFromStore(store);
     expect(reviews).toHaveLength(2);
 
-    // Second review has no files/chunks/findings
-    const files2 = store.getFiles('github/acme/other/10');
-    const chunks2 = store.getChunks('github/acme/other/10');
-    const findings2 = store.getFindings('github/acme/other/10');
-    expect(files2.length).toBe(0);
-    expect(chunks2.length).toBe(0);
-    expect(findings2.length).toBe(0);
+    const first = reviews.find((r) => r.key === 'github/acme/widgets/42')!;
+    const second = reviews.find((r) => r.key === 'github/acme/other/10')!;
 
-    // First review still has data
-    const files1 = store.getFiles('github/acme/widgets/42');
-    expect(files1.length).toBe(3);
+    expect(first.fileCount).toBe(3);
+    expect(first.chunkCount).toBe(2);
+    expect(second.fileCount).toBe(0);
+    expect(second.chunkCount).toBe(0);
+  });
+});
+
+describe('Data access: getReviewFromStore', () => {
+  let store: KaijuStore;
+  let cleanup: () => void;
+
+  beforeEach(() => {
+    const ctx = createTestStore();
+    store = ctx.store;
+    cleanup = ctx.cleanup;
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('returns review by key', async () => {
+    await store.createReview({
+      key: 'github/acme/widgets/42',
+      provider: 'github',
+      repo: 'acme/widgets',
+      pr: 42,
+      title: 'Test PR',
+    });
+
+    const review = getReviewFromStore(store, 'github/acme/widgets/42');
+    expect(review.pr).toBe(42);
+    expect(review.title).toBe('Test PR');
+  });
+
+  it('throws for missing key', () => {
+    expect(() => getReviewFromStore(store, 'github/nonexistent/repo/999')).toThrow(
+      'Review not found',
+    );
+  });
+});
+
+describe('Data access: getChunksFromStore / getChunkFromStore', () => {
+  let store: KaijuStore;
+  let cleanup: () => void;
+
+  beforeEach(async () => {
+    const ctx = createTestStore();
+    store = ctx.store;
+    cleanup = ctx.cleanup;
+    await seedTestData(store);
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('getChunksFromStore returns all chunks for a review', () => {
+    const chunks = getChunksFromStore(store, 'github/acme/widgets/42');
+    expect(chunks).toHaveLength(2);
+    expect(chunks.map((c) => c.slug)).toContain('001-theme');
+    expect(chunks.map((c) => c.slug)).toContain('002-utils');
+  });
+
+  it('getChunksFromStore returns empty for missing review', () => {
+    const chunks = getChunksFromStore(store, 'github/nonexistent/repo/999');
+    expect(chunks).toEqual([]);
+  });
+
+  it('getChunkFromStore returns chunk with files', () => {
+    const chunk = getChunkFromStore(store, 'github/acme/widgets/42', '001-theme');
+    expect(chunk.title).toBe('Theme changes');
+    expect(chunk.files).toHaveLength(2);
+    expect(chunk.files.map((f) => f.path)).toContain('src/theme.ts');
+    expect(chunk.files.map((f) => f.path)).toContain('src/colors.ts');
+  });
+
+  it('getChunkFromStore throws for missing chunk slug', () => {
+    expect(() => getChunkFromStore(store, 'github/acme/widgets/42', 'nonexistent')).toThrow(
+      'Chunk not found',
+    );
+  });
+});
+
+describe('Data access: getFindingsFromStore', () => {
+  let store: KaijuStore;
+  let cleanup: () => void;
+
+  beforeEach(async () => {
+    const ctx = createTestStore();
+    store = ctx.store;
+    cleanup = ctx.cleanup;
+    await seedTestData(store);
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('returns all findings for a review', () => {
+    const findings = getFindingsFromStore(store, 'github/acme/widgets/42');
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.message).toBe('Consider using CSS custom properties');
+  });
+
+  it('filters by chunk slug', () => {
+    const themeFindings = getFindingsFromStore(store, 'github/acme/widgets/42', '001-theme');
+    expect(themeFindings).toHaveLength(1);
+
+    const utilsFindings = getFindingsFromStore(store, 'github/acme/widgets/42', '002-utils');
+    expect(utilsFindings).toHaveLength(0);
+  });
+
+  it('returns empty for nonexistent chunk slug', () => {
+    const findings = getFindingsFromStore(store, 'github/acme/widgets/42', 'nonexistent');
+    expect(findings).toEqual([]);
+  });
+});
+
+describe('Data access: getCommentsFromStore', () => {
+  let store: KaijuStore;
+  let cleanup: () => void;
+
+  beforeEach(async () => {
+    const ctx = createTestStore();
+    store = ctx.store;
+    cleanup = ctx.cleanup;
+    await seedTestData(store);
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('returns all comments for a review', () => {
+    const comments = getCommentsFromStore(store, 'github/acme/widgets/42');
+    expect(comments).toHaveLength(1);
+    expect(comments[0]!.body).toBe('Should this use CSS variables?');
+  });
+
+  it('filters by chunk slug', () => {
+    const themeComments = getCommentsFromStore(store, 'github/acme/widgets/42', '001-theme');
+    expect(themeComments).toHaveLength(1);
+
+    const utilsComments = getCommentsFromStore(store, 'github/acme/widgets/42', '002-utils');
+    expect(utilsComments).toHaveLength(0);
+  });
+
+  it('returns empty for nonexistent chunk slug', () => {
+    const comments = getCommentsFromStore(store, 'github/acme/widgets/42', 'nonexistent');
+    expect(comments).toEqual([]);
+  });
+});
+
+describe('Data access: getFilesFromStore', () => {
+  let store: KaijuStore;
+  let cleanup: () => void;
+
+  beforeEach(async () => {
+    const ctx = createTestStore();
+    store = ctx.store;
+    cleanup = ctx.cleanup;
+    await seedTestData(store);
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('returns all files for a review', () => {
+    const files = getFilesFromStore(store, 'github/acme/widgets/42');
+    expect(files).toHaveLength(3);
+    expect(files.map((f) => f.path)).toContain('src/theme.ts');
+    expect(files.map((f) => f.path)).toContain('src/colors.ts');
+    expect(files.map((f) => f.path)).toContain('src/utils.ts');
+  });
+
+  it('returns empty for missing review', () => {
+    const files = getFilesFromStore(store, 'github/nonexistent/repo/999');
+    expect(files).toEqual([]);
+  });
+});
+
+describe('Cross-layer consistency: CLI writes, data access functions read', () => {
+  let store: KaijuStore;
+  let cleanup: () => void;
+
+  beforeEach(async () => {
+    const ctx = createTestStore();
+    store = ctx.store;
+    cleanup = ctx.cleanup;
+    await seedTestData(store);
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('review data from getReviewFromStore matches expected fields', () => {
+    const review = getReviewFromStore(store, 'github/acme/widgets/42');
+    expect(review.key).toBe('github/acme/widgets/42');
+    expect(review.provider).toBe('github');
+    expect(review.repo).toBe('acme/widgets');
+    expect(review.pr).toBe(42);
+    expect(review.title).toBe('Add dark mode');
+    expect(review.status).toBe('split');
+  });
+
+  it('chunks from getChunkFromStore include all expected data fields', () => {
+    const chunk = getChunkFromStore(store, 'github/acme/widgets/42', '001-theme');
+    expect(chunk.title).toBe('Theme changes');
+    expect(chunk.description).toBe('Dark mode theme implementation');
+    expect(chunk.reviewPriority).toBe('high');
+    expect(chunk.estimatedTokens).toBe(500);
+    expect(chunk.status).toBe('pending');
+    expect(chunk.patch).toContain('diff --git');
+  });
+
+  it('files are correctly associated with chunks via getChunkFromStore', () => {
+    const themeChunk = getChunkFromStore(store, 'github/acme/widgets/42', '001-theme');
+    const utilsChunk = getChunkFromStore(store, 'github/acme/widgets/42', '002-utils');
+
+    expect(themeChunk.files).toHaveLength(2);
+    expect(utilsChunk.files).toHaveLength(1);
+    expect(utilsChunk.files[0]!.path).toBe('src/utils.ts');
+  });
+
+  it('findings are correctly filtered by chunk via getFindingsFromStore', () => {
+    const themeFindings = getFindingsFromStore(store, 'github/acme/widgets/42', '001-theme');
+    expect(themeFindings).toHaveLength(1);
+    expect(themeFindings[0]!.severity).toBe('suggestion');
+    expect(themeFindings[0]!.file).toBe('src/theme.ts');
+    expect(themeFindings[0]!.line).toBe(5);
+  });
+
+  it('comments are correctly filtered by chunk via getCommentsFromStore', () => {
+    const themeComments = getCommentsFromStore(store, 'github/acme/widgets/42', '001-theme');
+    expect(themeComments).toHaveLength(1);
+    expect(themeComments[0]!.author).toBe('reviewer1');
+    expect(themeComments[0]!.file).toBe('src/theme.ts');
+    expect(themeComments[0]!.line).toBe(10);
+  });
+
+  it('route parameter parsing works for review key construction', () => {
+    const params = { provider: 'github', org: 'acme', repo: 'widgets', pr: '42' };
+    const reviewKey = `${params.provider}/${params.org}/${params.repo}/${params.pr}`;
+    expect(reviewKey).toBe('github/acme/widgets/42');
+
+    const review = getReviewFromStore(store, reviewKey);
+    expect(review.pr).toBe(42);
   });
 });

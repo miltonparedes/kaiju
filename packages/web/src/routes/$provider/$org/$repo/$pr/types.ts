@@ -42,6 +42,7 @@ export interface DashboardReview {
   repo: string;
   pr: number;
   title: string;
+  body: string;
   url: string;
   base: string;
   head: string;

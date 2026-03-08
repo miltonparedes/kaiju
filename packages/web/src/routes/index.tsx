@@ -118,6 +118,11 @@ function ReviewCard({ review }: { review: DashboardReview }) {
               {reviewedChunkCount}/{chunkCount}
             </span>
           </div>
+
+          {/* Open link */}
+          <div className="flex justify-end pt-1">
+            <span className="text-sm font-medium text-primary">Open →</span>
+          </div>
         </CardContent>
       </Card>
     </Link>

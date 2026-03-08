@@ -100,6 +100,11 @@ export function ReviewSummary({ review, chunks, findings, onFindingClick }: Revi
                   {review.base} → {review.head}
                 </p>
               ) : null}
+              {review.body ? (
+                <p className="mt-2 whitespace-pre-wrap text-xs text-muted-foreground">
+                  {review.body}
+                </p>
+              ) : null}
             </CardContent>
           </Card>
 

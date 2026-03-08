@@ -30,6 +30,7 @@ function createCoreTables(db: DB) {
     repo TEXT NOT NULL,
     pr INTEGER NOT NULL,
     title TEXT NOT NULL DEFAULT '',
+    body TEXT NOT NULL DEFAULT '',
     url TEXT NOT NULL DEFAULT '',
     base TEXT NOT NULL DEFAULT '',
     head TEXT NOT NULL DEFAULT '',

@@ -36,6 +36,7 @@ export interface CreateReviewInput {
   repo: string;
   pr: number;
   title?: string;
+  body?: string;
   url?: string;
   base?: string;
   head?: string;
@@ -133,6 +134,7 @@ export class KaijuStore {
           repo: input.repo,
           pr: input.pr,
           title: input.title ?? '',
+          body: input.body ?? '',
           url: input.url ?? '',
           base: input.base ?? '',
           head: input.head ?? '',

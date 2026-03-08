@@ -1,5 +1,6 @@
 import { createServerFn } from '@tanstack/react-start';
 
+import { getCommentsFromStore } from './dataAccess.js';
 import { getStore } from './store.js';
 
 /**
@@ -14,18 +15,5 @@ export const getComments = createServerFn({ method: 'GET' })
   })
   .handler(async ({ data }) => {
     const store = getStore();
-    const allComments = store.getComments(data.reviewKey);
-
-    if (!data.chunkSlug) {
-      return allComments;
-    }
-
-    // Filter by chunk slug — resolve slug to numeric chunk ID first
-    const chunks = store.getChunks(data.reviewKey);
-    const chunk = chunks.find((c) => c.slug === data.chunkSlug);
-    if (!chunk) {
-      return [];
-    }
-
-    return allComments.filter((c) => c.chunkId === chunk.id);
+    return getCommentsFromStore(store, data.reviewKey, data.chunkSlug);
   });

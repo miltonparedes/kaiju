@@ -24,6 +24,7 @@ export interface DiffFileEntry {
 /** PR metadata extracted from `gh pr view`. */
 export interface PRMetadata {
   title: string;
+  body: string;
   base: string;
   head: string;
   url: string;
@@ -196,12 +197,13 @@ export function parseDiffIntoFiles(diff: string): DiffFileEntry[] {
 // ─── parseGhPrViewJson ──────────────────────────────────────────────────────────
 
 /**
- * Parse the JSON output of `gh pr view --json title,number,baseRefName,headRefName,url`.
+ * Parse the JSON output of `gh pr view --json title,number,baseRefName,headRefName,url,body`.
  */
 export function parseGhPrViewJson(json: string): PRMetadata {
   const data = JSON.parse(json) as {
     title: string;
     number: number;
+    body: string;
     baseRefName: string;
     headRefName: string;
     url: string;
@@ -209,6 +211,7 @@ export function parseGhPrViewJson(json: string): PRMetadata {
 
   return {
     title: data.title,
+    body: data.body ?? '',
     base: data.baseRefName,
     head: data.headRefName,
     url: data.url,
@@ -491,7 +494,7 @@ export async function fetchGitHubPR(
     '-R',
     repoSlug,
     '--json',
-    'title,number,baseRefName,headRefName,url',
+    'title,number,body,baseRefName,headRefName,url',
   ]);
   const metadata = parseGhPrViewJson(prViewJson);
 
@@ -532,6 +535,7 @@ export async function fetchGitHubPR(
     repo: repoSlug,
     pr,
     title: metadata.title,
+    body: metadata.body,
     url: metadata.url,
     base: metadata.base,
     head: metadata.head,

@@ -1,5 +1,6 @@
 import { createServerFn } from '@tanstack/react-start';
 
+import { getFilesFromStore } from './dataAccess.js';
 import { getStore } from './store.js';
 
 /**
@@ -14,5 +15,5 @@ export const getFiles = createServerFn({ method: 'GET' })
   })
   .handler(async ({ data }) => {
     const store = getStore();
-    return store.getFiles(data.reviewKey);
+    return getFilesFromStore(store, data.reviewKey);
   });
