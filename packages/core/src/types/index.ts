@@ -69,9 +69,59 @@ export interface ChunkDep {
   targetChunkId: number;
 }
 
-// ─── Comment ────────────────────────────────────────────────────────────────────
+// ─── Comment (spec-format, matching CommentFileJson from fileTypes.ts) ───────
+// Sub-types (CommentMessage) live in fileTypes.ts to avoid barrel export collision.
 
 export interface Comment {
+  thread_id: string;
+  source: string;
+  state: CommentState;
+  chunk_id?: string | null;
+  file?: string | null;
+  line?: number | null;
+  messages: {
+    author: string;
+    body: string;
+    timestamp: string;
+    gh_comment_id?: number;
+  }[];
+}
+
+// ─── Finding (spec-format, matching FindingFileJson from fileTypes.ts) ───────
+// Sub-types (FindingEntry) live in fileTypes.ts to avoid barrel export collision.
+
+export interface Finding {
+  id: string;
+  reviewer: string;
+  chunk_id?: string | null;
+  timestamp: string;
+  in_reply_to?: string | null;
+  findings: {
+    file: string;
+    line?: number | null;
+    end_line?: number | null;
+    severity: FindingSeverity;
+    message: string;
+    suggestion?: string | null;
+    code_suggestion?: string | null;
+    root_cause?: string | null;
+    impact?: string | null;
+    status: FindingStatus;
+    publish: boolean;
+  }[];
+}
+
+// ─── DB Row types ───────────────────────────────────────────────────────────
+// These are the DB row shapes (numeric IDs, numeric chunkId).
+// Use them when dealing with raw Drizzle query results.
+
+export type ReviewRow = Review;
+export type FileEntryRow = FileEntry;
+export type ImportRow = Import;
+export type ChunkRow = Chunk;
+export type ChunkDepRow = ChunkDep;
+
+export interface CommentRow {
   id: number;
   reviewId: number;
   threadId: string;
@@ -87,9 +137,7 @@ export interface Comment {
   createdAt: number;
 }
 
-// ─── Finding ────────────────────────────────────────────────────────────────────
-
-export interface Finding {
+export interface FindingRow {
   id: number;
   reviewId: number;
   chunkId?: number | null;
@@ -109,18 +157,6 @@ export interface Finding {
   timestamp?: string | null;
   createdAt: number;
 }
-
-// ─── DB Row type aliases ────────────────────────────────────────────────────
-// These are aliases for the DB row shapes (numeric chunkId, SQLite IDs).
-// Use them when dealing with raw Drizzle query results.
-
-export type ReviewRow = Review;
-export type FileEntryRow = FileEntry;
-export type ImportRow = Import;
-export type ChunkRow = Chunk;
-export type ChunkDepRow = ChunkDep;
-export type CommentRow = Comment;
-export type FindingRow = Finding;
 
 // ─── Git Provider ───────────────────────────────────────────────────────────────
 

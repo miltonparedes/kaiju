@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createDB } from './index.js';
 import { KaijuStore, type CreateFileInput, type CreateReviewInput } from './kaijuStore.js';
+import { reviews } from './schema.js';
 
 // Review key for tests — constructed dynamically to avoid secret-detection false positive
 const TEST_PROVIDER = 'github';
@@ -138,14 +139,34 @@ describe('transaction rollback on FS failure', () => {
 
   it('rolls back SQLite when FS write fails during addFiles', async () => {
     // Create review with valid store first
-    await store.createReview(makeReviewInput());
+    const review = await store.createReview(makeReviewInput());
 
-    // Now create a store with a bad base dir for the addFiles call
+    // Now create a NEW store pointing at the SAME in-memory DB but a bad base dir.
+    // Review must exist in the DB so addFiles() can find it,
+    // But the FS write (syncFilesJson) will fail because the path is invalid.
     const db = createDB();
+    // Insert a matching review row into the bad store's DB so addFiles can proceed
     const badStore = new KaijuStore(db, '/dev/null/impossible/path');
+    // Create the review in this DB (it will fail on FS writes, rollback, so insert directly)
+    db.insert(reviews)
+      .values({
+        key: TEST_KEY,
+        provider: TEST_PROVIDER,
+        repo: `${TEST_ORG}/${TEST_REPO}`,
+        pr: TEST_PR,
+        title: 'Big PR',
+        url: '',
+        base: 'main',
+        head: 'feature',
+      })
+      .run();
 
-    // This will fail because the base dir is bad
-    await expect(badStore.createReview(makeReviewInput())).rejects.toThrow();
+    // AddFiles will fail when trying to write files.json to /dev/null/impossible/path
+    await expect(badStore.addFiles(TEST_KEY, makeFileInputs())).rejects.toThrow();
+
+    // SQLite should have been rolled back — no file rows in DB
+    const fileRows = badStore.getFiles(TEST_KEY);
+    expect(fileRows).toEqual([]);
 
     badStore.close();
   });

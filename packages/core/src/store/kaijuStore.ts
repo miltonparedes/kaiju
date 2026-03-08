@@ -177,22 +177,24 @@ export class KaijuStore {
   }
 
   /**
-   * Delete a review from both SQLite and disk.
+   * Delete a review from both disk and SQLite.
+   * Deletes disk files FIRST, then SQLite rows. If disk deletion fails,
+   * SQLite rows are NOT deleted — the error is propagated.
    * Returns true if deleted, false if not found.
    */
   async deleteReview(key: string): Promise<boolean> {
-    const result = this.db.delete(reviews).where(eq(reviews.key, key)).returning().all();
-    if (result.length === 0) {
+    // Check if review exists before attempting deletion
+    const review = this.getReview(key);
+    if (!review) {
       return false;
     }
 
-    // Remove review directory from disk
-    try {
-      const reviewDir = getReviewDir(key, this.baseDir);
-      await rm(reviewDir, { recursive: true, force: true });
-    } catch {
-      // Directory may not exist on disk (e.g., DB-only review); ignore FS errors
-    }
+    // Delete disk files FIRST — if this fails, SQLite rows are preserved
+    const reviewDir = getReviewDir(key, this.baseDir);
+    await rm(reviewDir, { recursive: true, force: true });
+
+    // Only delete SQLite rows after disk deletion succeeds
+    this.db.delete(reviews).where(eq(reviews.key, key)).run();
 
     return true;
   }
