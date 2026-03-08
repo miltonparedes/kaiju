@@ -1,7 +1,7 @@
 'use client';
 
 import { ChevronDown, ChevronRight, FileText } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge.js';
 import {
@@ -32,6 +32,10 @@ interface ChunkNavigatorProps {
   findings: DashboardFinding[];
   files: DashboardFile[];
   onFileClick?: (filePath: string) => void;
+  /** Index of the currently active/focused chunk (0-based). */
+  activeChunkIndex?: number;
+  /** Called when user clicks a chunk title. */
+  onChunkClick?: (index: number) => void;
 }
 
 // ─── FindingBadges ────────────────────────────────────────────────────────────
@@ -103,10 +107,14 @@ function ChunkItem({
   data,
   index,
   onFileClick,
+  isActive,
+  onChunkClick,
 }: {
   data: ChunkWithStats;
   index: number;
   onFileClick?: (filePath: string) => void;
+  isActive?: boolean;
+  onChunkClick?: (index: number) => void;
 }) {
   const { chunk, files, findings, totalAdditions, totalDeletions } = data;
   const [open, setOpen] = useState(false);
@@ -114,8 +122,17 @@ function ChunkItem({
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
-      <li className="rounded-md border border-border bg-card/50">
-        <CollapsibleTrigger className="flex w-full items-start gap-2 px-3 py-2 text-left">
+      <li
+        data-chunk-nav-index={index}
+        className={cn(
+          'rounded-md border bg-card/50',
+          isActive ? 'border-primary bg-primary/5' : 'border-border',
+        )}
+      >
+        <CollapsibleTrigger
+          className="flex w-full items-start gap-2 px-3 py-2 text-left"
+          onClick={() => onChunkClick?.(index)}
+        >
           <span className="mt-0.5 shrink-0 text-muted-foreground">
             {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
           </span>
@@ -179,7 +196,14 @@ function ChunkItem({
 
 // ─── ChunkNavigator (main export) ─────────────────────────────────────────────
 
-export function ChunkNavigator({ chunks, findings, files, onFileClick }: ChunkNavigatorProps) {
+export function ChunkNavigator({
+  chunks,
+  findings,
+  files,
+  onFileClick,
+  activeChunkIndex,
+  onChunkClick,
+}: ChunkNavigatorProps) {
   const sortedChunks = buildSortedChunks(chunks, findings, files);
 
   const handleFileClick = useCallback(
@@ -189,8 +213,19 @@ export function ChunkNavigator({ chunks, findings, files, onFileClick }: ChunkNa
     [onFileClick],
   );
 
+  // Scroll the active chunk into view in the left panel
+  useEffect(() => {
+    if (activeChunkIndex == null || activeChunkIndex < 0) {
+      return;
+    }
+    const el = document.querySelector(`[data-chunk-nav-index="${activeChunkIndex}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [activeChunkIndex]);
+
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col" data-panel="left">
       <div className="border-b border-border px-4 py-3">
         <h2 className="text-sm font-semibold text-foreground">Changes</h2>
         <p className="text-xs text-muted-foreground">
@@ -212,6 +247,8 @@ export function ChunkNavigator({ chunks, findings, files, onFileClick }: ChunkNa
                   data={data}
                   index={i}
                   onFileClick={handleFileClick}
+                  isActive={activeChunkIndex === i}
+                  onChunkClick={onChunkClick}
                 />
               ))}
             </ul>

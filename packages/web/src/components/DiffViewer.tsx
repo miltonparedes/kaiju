@@ -4,7 +4,7 @@ import type { SelectedLineRange } from '@pierre/diffs';
 import { type PatchDiffProps, PatchDiff, WorkerPoolContextProvider } from '@pierre/diffs/react';
 import WorkerUrl from '@pierre/diffs/worker/worker.js?worker&url';
 import { Columns2, Rows3 } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ScrollArea } from '@/components/ui/scroll-area.js';
 import { Toggle } from '@/components/ui/toggle.js';
@@ -31,9 +31,15 @@ interface DiffViewerProps {
   findings?: DashboardFinding[];
   comments?: DashboardComment[];
   expandedFindingId?: number | null;
+  /** Controlled diff style (split or unified). When provided, the internal toggle still works. */
+  diffStyle?: DiffStyle;
+  /** Callback when diff style changes via toggle. */
+  onDiffStyleChange?: (style: DiffStyle) => void;
+  /** Index of the focused chunk (for scroll-into-view). */
+  activeChunkIndex?: number;
 }
 
-type DiffStyle = 'split' | 'unified';
+export type DiffStyle = 'split' | 'unified';
 
 /** Line selection state with the file context. */
 interface FileLineSelection {
@@ -193,8 +199,19 @@ export function DiffViewer({
   findings = [],
   comments = [],
   expandedFindingId,
+  diffStyle: controlledDiffStyle,
+  onDiffStyleChange,
+  activeChunkIndex,
 }: DiffViewerProps) {
-  const [diffStyle, setDiffStyle] = useState<DiffStyle>('split');
+  const [internalDiffStyle, setInternalDiffStyle] = useState<DiffStyle>('split');
+  const diffStyle = controlledDiffStyle ?? internalDiffStyle;
+  const setDiffStyle = useCallback(
+    (style: DiffStyle) => {
+      setInternalDiffStyle(style);
+      onDiffStyleChange?.(style);
+    },
+    [onDiffStyleChange],
+  );
   const [lineSelection, setLineSelection] = useState<FileLineSelection | null>(null);
 
   const diffOptions = useMemo<DiffOptions>(
@@ -227,6 +244,22 @@ export function DiffViewer({
   }, []);
 
   const hasPatches = chunks.some((c) => c.patch);
+
+  // Scroll to active chunk when activeChunkIndex changes
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (activeChunkIndex == null || activeChunkIndex < 0) {
+      return;
+    }
+    // Small delay to let DOM update
+    const timer = setTimeout(() => {
+      const el = document.querySelector(`[data-chunk-index="${activeChunkIndex}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [activeChunkIndex]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -275,10 +308,15 @@ export function DiffViewer({
           </div>
         ) : (
           <DiffWorkerProvider>
-            <div>
-              {chunks.map((chunk) =>
+            <div ref={scrollContainerRef}>
+              {chunks.map((chunk, idx) =>
                 chunk.patch ? (
-                  <div key={chunk.slug} className="border-b-2 border-border/50 last:border-b-0">
+                  <div
+                    key={chunk.slug}
+                    data-chunk-index={idx}
+                    data-chunk-slug={chunk.slug}
+                    className="border-b-2 border-border/50 last:border-b-0"
+                  >
                     {/* Chunk title bar */}
                     <div className="bg-card/50 px-4 py-2">
                       <span className="text-sm font-semibold text-foreground">
