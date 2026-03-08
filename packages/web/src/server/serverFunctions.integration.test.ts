@@ -380,3 +380,83 @@ describe('Cross-layer consistency: CLI writes, server functions read', () => {
     expect(review!.pr).toBe(42);
   });
 });
+
+// ─── Dashboard data enrichment ──────────────────────────────────────────────────
+
+describe('Dashboard review enrichment', () => {
+  let store: KaijuStore;
+  let cleanup: () => void;
+
+  beforeEach(() => {
+    const ctx = createTestStore();
+    store = ctx.store;
+    cleanup = ctx.cleanup;
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('returns empty array when no reviews exist', () => {
+    const reviews = store.listReviews();
+    expect(reviews).toEqual([]);
+  });
+
+  it('enriches a review with file, chunk, and finding counts', async () => {
+    await seedTestData(store);
+    const reviews = store.listReviews();
+    expect(reviews).toHaveLength(1);
+
+    const r = reviews[0]!;
+    const files = store.getFiles(r.key);
+    const chunks = store.getChunks(r.key);
+    const findings = store.getFindings(r.key);
+    const reviewedChunkCount = chunks.filter((c) => c.status === 'reviewed').length;
+
+    expect(files.length).toBe(3);
+    expect(chunks.length).toBe(2);
+    expect(findings.length).toBe(1);
+    expect(reviewedChunkCount).toBe(0);
+  });
+
+  it('tracks reviewed chunk count after marking chunk reviewed', async () => {
+    await seedTestData(store);
+    const chunks = store.getChunks('github/acme/widgets/42');
+    const chunk = chunks[0]!;
+
+    // Mark chunk as reviewed
+    const db = (store as unknown as { db: KaijuDB }).db;
+    db.update(chunksTable).set({ status: 'reviewed' }).where(eq(chunksTable.id, chunk.id)).run();
+
+    const updatedChunks = store.getChunks('github/acme/widgets/42');
+    const reviewedCount = updatedChunks.filter((c) => c.status === 'reviewed').length;
+    expect(reviewedCount).toBe(1);
+  });
+
+  it('handles multiple reviews independently', async () => {
+    await seedTestData(store); // github/acme/widgets/42
+
+    await store.createReview({
+      key: 'github/acme/other/10',
+      provider: 'github',
+      repo: 'acme/other',
+      pr: 10,
+      title: 'Another PR',
+    });
+
+    const reviews = store.listReviews();
+    expect(reviews).toHaveLength(2);
+
+    // Second review has no files/chunks/findings
+    const files2 = store.getFiles('github/acme/other/10');
+    const chunks2 = store.getChunks('github/acme/other/10');
+    const findings2 = store.getFindings('github/acme/other/10');
+    expect(files2.length).toBe(0);
+    expect(chunks2.length).toBe(0);
+    expect(findings2.length).toBe(0);
+
+    // First review still has data
+    const files1 = store.getFiles('github/acme/widgets/42');
+    expect(files1.length).toBe(3);
+  });
+});
