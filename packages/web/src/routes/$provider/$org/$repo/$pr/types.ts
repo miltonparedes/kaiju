@@ -51,9 +51,21 @@ export interface DashboardReview {
   updatedAt: number;
 }
 
+/** File entry shape as returned by the server getFiles function (Drizzle select). */
+export interface DashboardFile {
+  id: number;
+  reviewId: number;
+  path: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  chunkId: number | null;
+}
+
 /** Data returned by the PR view page loader. */
 export interface PRLoaderData {
   review: DashboardReview;
   chunks: DashboardChunk[];
   findings: DashboardFinding[];
+  files: DashboardFile[];
 }

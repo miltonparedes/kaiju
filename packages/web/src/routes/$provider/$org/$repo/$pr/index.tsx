@@ -1,137 +1,34 @@
 import { Link, createFileRoute } from '@tanstack/react-router';
+import { useCallback } from 'react';
 
+import { ChunkNavigator } from '@/components/ChunkNavigator.js';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable.js';
 import { ScrollArea } from '@/components/ui/scroll-area.js';
 import { getChunks } from '@/server/chunks.js';
+import { getFiles } from '@/server/files.js';
 import { getFindings } from '@/server/findings.js';
 import { getReview } from '@/server/reviews.js';
 
-import type { DashboardChunk, DashboardFinding, PRLoaderData } from './types.js';
+import type { DashboardChunk, DashboardFile, DashboardFinding, PRLoaderData } from './types.js';
 
 export const Route = createFileRoute('/$provider/$org/$repo/$pr/')({
   loader: async ({ params }): Promise<PRLoaderData> => {
     const reviewKey = `${params.provider}/${params.org}/${params.repo}/${params.pr}`;
-    const [review, chunks, findings] = await Promise.all([
+    const [review, chunks, findings, files] = await Promise.all([
       getReview({ data: { key: reviewKey } }),
       getChunks({ data: { reviewKey } }),
       getFindings({ data: { reviewKey } }),
+      getFiles({ data: { reviewKey } }),
     ]);
     return {
       review,
       chunks: chunks as DashboardChunk[],
       findings: findings as DashboardFinding[],
+      files: files as DashboardFile[],
     };
   },
   component: PRViewPage,
 });
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const PRIORITY_LABELS: Record<string, string> = {
-  high: '🔴',
-  medium: '🟡',
-  low: '🟢',
-};
-
-// ─── Left Panel: Chunk Navigator ──────────────────────────────────────────────
-
-function ChunkNavigator({
-  chunks,
-  findings,
-}: {
-  chunks: DashboardChunk[];
-  findings: DashboardFinding[];
-}) {
-  // Group findings by chunk ID
-  const findingsByChunk = new Map<number, DashboardFinding[]>();
-  for (const f of findings) {
-    if (f.chunkId != null) {
-      const existing = findingsByChunk.get(f.chunkId) ?? [];
-      existing.push(f);
-      findingsByChunk.set(f.chunkId, existing);
-    }
-  }
-
-  // Sort chunks by priority: high > medium > low
-  const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
-  const sortedChunks = [...chunks].sort(
-    (a, b) => (priorityOrder[a.reviewPriority] ?? 1) - (priorityOrder[b.reviewPriority] ?? 1),
-  );
-
-  return (
-    <div className="flex h-full flex-col">
-      <div className="border-b border-border px-4 py-3">
-        <h2 className="text-sm font-semibold text-foreground">Changes</h2>
-        <p className="text-xs text-muted-foreground">{chunks.length} chunks</p>
-      </div>
-      <ScrollArea className="flex-1">
-        <div className="p-2">
-          {sortedChunks.length === 0 ? (
-            <p className="px-2 py-4 text-center text-sm text-muted-foreground">
-              No chunks yet. Run <code>kaiju split</code> first.
-            </p>
-          ) : (
-            <ul className="space-y-1">
-              {sortedChunks.map((chunk) => {
-                const chunkFindings = findingsByChunk.get(chunk.id) ?? [];
-                const criticalCount = chunkFindings.filter((f) => f.severity === 'critical').length;
-                const suggestionCount = chunkFindings.filter(
-                  (f) => f.severity === 'suggestion',
-                ).length;
-                const isReviewed = chunk.status === 'reviewed';
-
-                return (
-                  <li
-                    key={chunk.slug}
-                    className="rounded-md border border-border bg-card/50 px-3 py-2"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs">
-                            {PRIORITY_LABELS[chunk.reviewPriority] ?? ''}
-                          </span>
-                          <span className="truncate text-sm font-medium text-foreground">
-                            {chunk.title || chunk.slug}
-                          </span>
-                        </div>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          ~{chunk.estimatedTokens.toLocaleString()} tokens
-                        </p>
-                      </div>
-                      {isReviewed ? (
-                        <span className="shrink-0 text-xs text-green-400">✓</span>
-                      ) : null}
-                    </div>
-
-                    {/* Finding badges */}
-                    {chunkFindings.length > 0 ? (
-                      <div className="mt-1.5 flex items-center gap-2 text-xs">
-                        {criticalCount > 0 ? (
-                          <span className="text-red-400">■ {criticalCount}</span>
-                        ) : null}
-                        {suggestionCount > 0 ? (
-                          <span className="text-yellow-400">■ {suggestionCount}</span>
-                        ) : null}
-                        {chunkFindings.length - criticalCount - suggestionCount > 0 ? (
-                          <span className="text-blue-400">
-                            □ {chunkFindings.length - criticalCount - suggestionCount}
-                          </span>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <p className="mt-1 text-xs text-muted-foreground/60">No findings</p>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-      </ScrollArea>
-    </div>
-  );
-}
 
 // ─── Center Panel: Diff Viewer Placeholder ────────────────────────────────────
 
@@ -368,7 +265,16 @@ function ReviewSummary({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 function PRViewPage() {
-  const { review, chunks, findings } = Route.useLoaderData();
+  const { review, chunks, findings, files } = Route.useLoaderData();
+
+  const handleFileClick = useCallback((filePath: string) => {
+    // Scroll center diff viewer to the file's section
+    const fileId = `diff-file-${filePath.replace(/[^a-zA-Z0-9]/g, '-')}`;
+    const el = document.getElementById(fileId);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, []);
 
   return (
     <div className="flex h-screen flex-col bg-background">
@@ -389,7 +295,12 @@ function PRViewPage() {
       <ResizablePanelGroup orientation="horizontal" className="flex-1">
         {/* Left panel: Chunk Navigator */}
         <ResizablePanel defaultSize="20%" minSize="12%" maxSize="40%">
-          <ChunkNavigator chunks={chunks} findings={findings} />
+          <ChunkNavigator
+            chunks={chunks}
+            findings={findings}
+            files={files}
+            onFileClick={handleFileClick}
+          />
         </ResizablePanel>
 
         <ResizableHandle withHandle />
