@@ -1,43 +1,411 @@
-import { createFileRoute } from '@tanstack/react-router';
+import { Link, createFileRoute } from '@tanstack/react-router';
 
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable.js';
+import { ScrollArea } from '@/components/ui/scroll-area.js';
 import { getChunks } from '@/server/chunks.js';
+import { getFindings } from '@/server/findings.js';
 import { getReview } from '@/server/reviews.js';
 
+import type { DashboardChunk, DashboardFinding, PRLoaderData } from './types.js';
+
 export const Route = createFileRoute('/$provider/$org/$repo/$pr/')({
-  loader: async ({ params }) => {
+  loader: async ({ params }): Promise<PRLoaderData> => {
     const reviewKey = `${params.provider}/${params.org}/${params.repo}/${params.pr}`;
-    const [review, chunks] = await Promise.all([
+    const [review, chunks, findings] = await Promise.all([
       getReview({ data: { key: reviewKey } }),
       getChunks({ data: { reviewKey } }),
+      getFindings({ data: { reviewKey } }),
     ]);
-    return { review, chunks };
+    return {
+      review,
+      chunks: chunks as DashboardChunk[],
+      findings: findings as DashboardFinding[],
+    };
   },
   component: PRViewPage,
 });
 
-function PRViewPage() {
-  const { review, chunks } = Route.useLoaderData();
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const PRIORITY_LABELS: Record<string, string> = {
+  high: '🔴',
+  medium: '🟡',
+  low: '🟢',
+};
+
+// ─── Left Panel: Chunk Navigator ──────────────────────────────────────────────
+
+function ChunkNavigator({
+  chunks,
+  findings,
+}: {
+  chunks: DashboardChunk[];
+  findings: DashboardFinding[];
+}) {
+  // Group findings by chunk ID
+  const findingsByChunk = new Map<number, DashboardFinding[]>();
+  for (const f of findings) {
+    if (f.chunkId != null) {
+      const existing = findingsByChunk.get(f.chunkId) ?? [];
+      existing.push(f);
+      findingsByChunk.set(f.chunkId, existing);
+    }
+  }
+
+  // Sort chunks by priority: high > medium > low
+  const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
+  const sortedChunks = [...chunks].sort(
+    (a, b) => (priorityOrder[a.reviewPriority] ?? 1) - (priorityOrder[b.reviewPriority] ?? 1),
+  );
 
   return (
-    <main className="min-h-screen bg-background p-8">
-      <h1 className="text-2xl font-bold text-foreground">{review.title || review.key}</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        {review.repo} #{review.pr} — {review.status}
-      </p>
-      <div className="mt-6">
-        <h2 className="text-lg font-semibold text-foreground">Chunks ({chunks.length})</h2>
-        {chunks.length === 0 ? (
-          <p className="mt-2 text-muted-foreground">No chunks yet. Run kaiju split first.</p>
-        ) : (
-          <ul className="mt-2 space-y-2">
-            {chunks.map((c) => (
-              <li key={c.slug} className="text-foreground">
-                {c.slug} — {c.title || 'Untitled'} ({c.estimatedTokens} tokens)
-              </li>
-            ))}
-          </ul>
-        )}
+    <div className="flex h-full flex-col">
+      <div className="border-b border-border px-4 py-3">
+        <h2 className="text-sm font-semibold text-foreground">Changes</h2>
+        <p className="text-xs text-muted-foreground">{chunks.length} chunks</p>
       </div>
-    </main>
+      <ScrollArea className="flex-1">
+        <div className="p-2">
+          {sortedChunks.length === 0 ? (
+            <p className="px-2 py-4 text-center text-sm text-muted-foreground">
+              No chunks yet. Run <code>kaiju split</code> first.
+            </p>
+          ) : (
+            <ul className="space-y-1">
+              {sortedChunks.map((chunk) => {
+                const chunkFindings = findingsByChunk.get(chunk.id) ?? [];
+                const criticalCount = chunkFindings.filter((f) => f.severity === 'critical').length;
+                const suggestionCount = chunkFindings.filter(
+                  (f) => f.severity === 'suggestion',
+                ).length;
+                const isReviewed = chunk.status === 'reviewed';
+
+                return (
+                  <li
+                    key={chunk.slug}
+                    className="rounded-md border border-border bg-card/50 px-3 py-2"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs">
+                            {PRIORITY_LABELS[chunk.reviewPriority] ?? ''}
+                          </span>
+                          <span className="truncate text-sm font-medium text-foreground">
+                            {chunk.title || chunk.slug}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          ~{chunk.estimatedTokens.toLocaleString()} tokens
+                        </p>
+                      </div>
+                      {isReviewed ? (
+                        <span className="shrink-0 text-xs text-green-400">✓</span>
+                      ) : null}
+                    </div>
+
+                    {/* Finding badges */}
+                    {chunkFindings.length > 0 ? (
+                      <div className="mt-1.5 flex items-center gap-2 text-xs">
+                        {criticalCount > 0 ? (
+                          <span className="text-red-400">■ {criticalCount}</span>
+                        ) : null}
+                        {suggestionCount > 0 ? (
+                          <span className="text-yellow-400">■ {suggestionCount}</span>
+                        ) : null}
+                        {chunkFindings.length - criticalCount - suggestionCount > 0 ? (
+                          <span className="text-blue-400">
+                            □ {chunkFindings.length - criticalCount - suggestionCount}
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <p className="mt-1 text-xs text-muted-foreground/60">No findings</p>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </ScrollArea>
+    </div>
+  );
+}
+
+// ─── Center Panel: Diff Viewer Placeholder ────────────────────────────────────
+
+function DiffViewer({ chunks }: { chunks: DashboardChunk[] }) {
+  return (
+    <div className="flex h-full flex-col">
+      <div className="border-b border-border px-4 py-3">
+        <h2 className="text-sm font-semibold text-foreground">Diffs</h2>
+      </div>
+      <ScrollArea className="flex-1">
+        <div className="p-4">
+          {chunks.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              No chunks to display. Run <code>kaiju split</code> to create chunks.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {chunks.map((chunk) => (
+                <div key={chunk.slug} className="rounded-md border border-border bg-muted/30 p-4">
+                  <h3 className="text-sm font-semibold text-foreground">
+                    {chunk.title || chunk.slug}
+                  </h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {chunk.description || 'No description'}
+                  </p>
+                  {chunk.patch ? (
+                    <pre className="mt-3 max-h-64 overflow-auto rounded-sm bg-background p-3 font-mono text-xs text-foreground">
+                      {chunk.patch.slice(0, 2000)}
+                      {chunk.patch.length > 2000 ? '\n... (truncated)' : ''}
+                    </pre>
+                  ) : (
+                    <p className="mt-2 text-xs italic text-muted-foreground">
+                      No patch data available
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </ScrollArea>
+    </div>
+  );
+}
+
+// ─── Right Panel: Review Summary ──────────────────────────────────────────────
+
+/** Compute summary stats for the review panel. */
+function computeSummaryStats(chunks: DashboardChunk[], findings: DashboardFinding[]) {
+  const reviewedCount = chunks.filter((c) => c.status === 'reviewed').length;
+  const totalChunks = chunks.length;
+  const progressPercent = totalChunks > 0 ? Math.round((reviewedCount / totalChunks) * 100) : 0;
+
+  const severityGroups = {
+    critical: findings.filter((f) => f.severity === 'critical'),
+    suggestion: findings.filter((f) => f.severity === 'suggestion'),
+    nitpick: findings.filter((f) => f.severity === 'nitpick'),
+    praise: findings.filter((f) => f.severity === 'praise'),
+  };
+
+  const reviewerMap = new Map<string, number>();
+  for (const f of findings) {
+    reviewerMap.set(f.reviewer, (reviewerMap.get(f.reviewer) ?? 0) + 1);
+  }
+
+  const totalTokens = chunks.reduce((sum, c) => sum + c.estimatedTokens, 0);
+  const reviewedTokens = chunks
+    .filter((c) => c.status === 'reviewed')
+    .reduce((sum, c) => sum + c.estimatedTokens, 0);
+
+  return {
+    reviewedCount,
+    totalChunks,
+    progressPercent,
+    severityGroups,
+    reviewerMap,
+    totalTokens,
+    reviewedTokens,
+  };
+}
+
+function ReviewSummary({
+  review,
+  chunks,
+  findings,
+}: {
+  review: PRLoaderData['review'];
+  chunks: DashboardChunk[];
+  findings: DashboardFinding[];
+}) {
+  const stats = computeSummaryStats(chunks, findings);
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="border-b border-border px-4 py-3">
+        <h2 className="text-sm font-semibold text-foreground">Info</h2>
+      </div>
+      <ScrollArea className="flex-1">
+        <div className="space-y-5 p-4">
+          {/* PR Summary */}
+          <section>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              PR Summary
+            </h3>
+            <p className="mt-1 text-sm text-foreground">{review.title || 'Untitled review'}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {review.repo} #{review.pr} · {review.base} → {review.head}
+            </p>
+          </section>
+
+          {/* Findings by severity */}
+          {findings.length > 0 ? (
+            <section>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Findings
+              </h3>
+              <ul className="mt-2 space-y-1">
+                {stats.severityGroups.critical.length > 0 ? (
+                  <li className="flex items-center gap-2 text-sm">
+                    <span className="text-red-400">■</span>
+                    <span className="text-foreground">
+                      {stats.severityGroups.critical.length} bugs
+                    </span>
+                  </li>
+                ) : null}
+                {stats.severityGroups.suggestion.length > 0 ? (
+                  <li className="flex items-center gap-2 text-sm">
+                    <span className="text-yellow-400">■</span>
+                    <span className="text-foreground">
+                      {stats.severityGroups.suggestion.length} suggestions
+                    </span>
+                  </li>
+                ) : null}
+                {stats.severityGroups.nitpick.length > 0 ? (
+                  <li className="flex items-center gap-2 text-sm">
+                    <span className="text-blue-400">□</span>
+                    <span className="text-foreground">
+                      {stats.severityGroups.nitpick.length} nitpicks
+                    </span>
+                  </li>
+                ) : null}
+                {stats.severityGroups.praise.length > 0 ? (
+                  <li className="flex items-center gap-2 text-sm">
+                    <span className="text-green-400">★</span>
+                    <span className="text-foreground">
+                      {stats.severityGroups.praise.length} praise
+                    </span>
+                  </li>
+                ) : null}
+              </ul>
+            </section>
+          ) : null}
+
+          {/* Progress */}
+          <section>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Progress
+            </h3>
+            <div className="mt-2">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>
+                  {stats.reviewedCount}/{stats.totalChunks} chunks
+                </span>
+                <span>{stats.progressPercent}%</span>
+              </div>
+              <div className="mt-1 h-2 overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-primary transition-all"
+                  style={{ width: `${stats.progressPercent}%` }}
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* Reviewers */}
+          {stats.reviewerMap.size > 0 ? (
+            <section>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Reviewers
+              </h3>
+              <ul className="mt-2 space-y-1">
+                {[...stats.reviewerMap.entries()].map(([reviewer, count]) => (
+                  <li
+                    key={reviewer}
+                    className="flex items-center justify-between text-sm text-foreground"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-primary">●</span>
+                      {reviewer}
+                    </span>
+                    <span className="text-xs text-muted-foreground">({count})</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
+          {/* Token budget */}
+          <section>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Token budget
+            </h3>
+            <div className="mt-2">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Reviewed: {stats.reviewedTokens.toLocaleString()}</span>
+                <span>Total: {stats.totalTokens.toLocaleString()}</span>
+              </div>
+              <div className="mt-1 h-2 overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-chart-2 transition-all"
+                  style={{
+                    width:
+                      stats.totalTokens > 0
+                        ? `${(stats.reviewedTokens / stats.totalTokens) * 100}%`
+                        : '0%',
+                  }}
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* Back to dashboard link */}
+          <section className="border-t border-border pt-4">
+            <Link to="/" className="text-xs text-primary hover:underline">
+              ← Back to dashboard
+            </Link>
+          </section>
+        </div>
+      </ScrollArea>
+    </div>
+  );
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
+function PRViewPage() {
+  const { review, chunks, findings } = Route.useLoaderData();
+
+  return (
+    <div className="flex h-screen flex-col bg-background">
+      {/* Header */}
+      <header className="flex items-center gap-3 border-b border-border px-4 py-2">
+        <Link to="/" className="text-sm font-bold text-primary">
+          Kaiju
+        </Link>
+        <span className="text-border">│</span>
+        <span className="text-sm text-muted-foreground">{review.repo}</span>
+        <span className="text-sm text-primary">#{review.pr}</span>
+        {review.title ? (
+          <span className="truncate text-sm text-foreground">— {review.title}</span>
+        ) : null}
+      </header>
+
+      {/* 3-panel layout */}
+      <ResizablePanelGroup orientation="horizontal" className="flex-1">
+        {/* Left panel: Chunk Navigator */}
+        <ResizablePanel defaultSize="20%" minSize="12%" maxSize="40%">
+          <ChunkNavigator chunks={chunks} findings={findings} />
+        </ResizablePanel>
+
+        <ResizableHandle withHandle />
+
+        {/* Center panel: Diff Viewer */}
+        <ResizablePanel defaultSize="55%" minSize="30%">
+          <DiffViewer chunks={chunks} />
+        </ResizablePanel>
+
+        <ResizableHandle withHandle />
+
+        {/* Right panel: Review Summary */}
+        <ResizablePanel defaultSize="25%" minSize="15%" maxSize="40%">
+          <ReviewSummary review={review} chunks={chunks} findings={findings} />
+        </ResizablePanel>
+      </ResizablePanelGroup>
+    </div>
   );
 }
