@@ -411,11 +411,15 @@ async function regenerateReview(
 
   for (const [threadId, threadComments] of threadMap) {
     const first = threadComments[0]!;
+    // Resolve chunk slug from numeric ID for on-disk representation
+    const chunkSlug = first.chunkId
+      ? (dbChunks.find((c) => c.id === first.chunkId)?.slug ?? null)
+      : null;
     const commentFile: CommentFileJson = {
       thread_id: threadId,
       source: first.source,
       state: first.state as CommentState,
-      chunk_id: first.chunkId ? String(first.chunkId) : null,
+      chunk_id: chunkSlug,
       file: first.file ?? null,
       line: first.line ?? null,
       messages: threadComments.map((c) => ({
@@ -432,10 +436,14 @@ async function regenerateReview(
 
   for (const finding of dbFindings) {
     const findingId = `finding-${String(finding.id).padStart(3, '0')}`;
+    // Resolve chunk slug from numeric ID for on-disk representation
+    const findingChunkSlug = finding.chunkId
+      ? (dbChunks.find((c) => c.id === finding.chunkId)?.slug ?? null)
+      : null;
     const findingFile: FindingFileJson = {
       id: findingId,
       reviewer: finding.reviewer,
-      chunk_id: finding.chunkId ? String(finding.chunkId) : null,
+      chunk_id: findingChunkSlug,
       timestamp: finding.timestamp ?? new Date().toISOString(),
       in_reply_to: finding.inReplyTo ?? null,
       findings: [
@@ -477,6 +485,7 @@ async function regenerateReview(
       url: review.url,
       title: review.title,
     },
+    status: review.status,
     stats,
     chunks: manifestChunks,
   };

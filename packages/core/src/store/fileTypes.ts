@@ -46,6 +46,7 @@ export interface ManifestChunk {
 export interface ManifestJson {
   version: string;
   source: ManifestSource;
+  status: string;
   stats: ManifestStats;
   chunks: ManifestChunk[];
 }

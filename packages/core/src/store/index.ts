@@ -14,9 +14,8 @@ export function createDB(path = ':memory:') {
   // Enable foreign key enforcement
   db.run(sql`PRAGMA foreign_keys = ON`);
 
-  if (path === ':memory:') {
-    createTables(db);
-  }
+  // Create tables for all DBs (both :memory: and file-backed)
+  createTables(db);
 
   return Object.assign(db, { close: () => sqlite.close() });
 }

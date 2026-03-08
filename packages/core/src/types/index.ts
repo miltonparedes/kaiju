@@ -109,6 +109,18 @@ export interface Finding {
   createdAt: number;
 }
 
+// ─── DB Row type aliases ────────────────────────────────────────────────────
+// These are aliases for the DB row shapes (numeric chunkId, SQLite IDs).
+// Use them when dealing with raw Drizzle query results.
+
+export type ReviewRow = Review;
+export type FileEntryRow = FileEntry;
+export type ImportRow = Import;
+export type ChunkRow = Chunk;
+export type ChunkDepRow = ChunkDep;
+export type CommentRow = Comment;
+export type FindingRow = Finding;
+
 // ─── Git Provider ───────────────────────────────────────────────────────────────
 
 export interface GitProvider {

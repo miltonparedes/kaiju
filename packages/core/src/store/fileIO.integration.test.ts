@@ -72,6 +72,7 @@ describe('manifest.json read/write', () => {
         head: 'feature/big-change',
         url: 'https://github.com/acme/widgets/pull/9999',
       },
+      status: 'split',
       stats: {
         total_files: 3,
         total_additions: 150,
@@ -116,6 +117,7 @@ describe('manifest.json read/write', () => {
         head: 'fix/typo',
         url: 'https://github.com/acme/widgets/pull/42',
       },
+      status: 'fetched',
       stats: {
         total_files: 0,
         total_additions: 0,
@@ -326,6 +328,7 @@ describe('full directory structure matches spec', () => {
         head: 'feature',
         url: 'https://github.com/org/repo/pull/9999',
       },
+      status: 'split',
       stats: {
         total_files: 2,
         total_additions: 150,

@@ -309,6 +309,15 @@ export class KaijuStore {
       }
     }
 
+    // Auto-transition review status to 'split' when first chunk is added
+    if (review.status === 'fetched') {
+      this.db
+        .update(reviews)
+        .set({ status: 'split', updatedAt: Math.floor(Date.now() / 1000) })
+        .where(eq(reviews.key, key))
+        .run();
+    }
+
     // File layer — write .patch
     const reviewDir = getReviewDir(key, this.baseDir);
     await writeChunkPatch(reviewDir, input.slug, input.patchContent);
@@ -392,11 +401,14 @@ export class KaijuStore {
       .where(eq(comments.threadId, input.threadId))
       .all();
 
+    // Resolve chunk slug from numeric ID for on-disk representation
+    const chunkSlug = input.chunkId ? this.resolveChunkSlug(input.chunkId) : null;
+
     const commentFile: CommentFileJson = {
       thread_id: input.threadId,
       source: input.source ?? 'github',
       state: input.state ?? 'open',
-      chunk_id: input.chunkId ? String(input.chunkId) : null,
+      chunk_id: chunkSlug,
       file: input.file ?? null,
       line: input.line ?? null,
       messages: threadComments.map((c) => ({
@@ -460,10 +472,12 @@ export class KaijuStore {
 
     // File layer — write finding JSON
     const findingId = `finding-${String(finding.id).padStart(3, '0')}`;
+    // Resolve chunk slug from numeric ID for on-disk representation
+    const findingChunkSlug = input.chunkId ? this.resolveChunkSlug(input.chunkId) : null;
     const findingFile: FindingFileJson = {
       id: findingId,
       reviewer: input.reviewer,
-      chunk_id: input.chunkId ? String(input.chunkId) : null,
+      chunk_id: findingChunkSlug,
       timestamp: input.timestamp ?? new Date().toISOString(),
       in_reply_to: input.inReplyTo ?? null,
       findings: [
@@ -595,6 +609,8 @@ export class KaijuStore {
       totalFindings: dbFindings.length,
     });
 
+    // Re-read review to get the latest status (may have been updated by addChunk)
+    const latestReview = this.getReview(key);
     const manifest: ManifestJson = {
       version: '1',
       source: {
@@ -606,6 +622,7 @@ export class KaijuStore {
         url: review.url,
         title: review.title,
       },
+      status: latestReview?.status ?? review.status,
       stats,
       chunks: manifestChunks,
     };
@@ -623,6 +640,7 @@ export class KaijuStore {
     manifestChunks: ManifestChunk[],
     totalComments: number,
     totalFindings: number,
+    status: string = 'fetched',
   ): ManifestJson {
     const stats = computeManifestStats({
       files: filesEntries,
@@ -642,9 +660,19 @@ export class KaijuStore {
         url: input.url ?? '',
         title: input.title ?? '',
       },
+      status,
       stats,
       chunks: manifestChunks,
     };
+  }
+
+  /**
+   * Resolve a numeric chunk ID to its slug.
+   * Returns null if the chunk is not found.
+   */
+  private resolveChunkSlug(chunkId: number): string | null {
+    const chunk = this.db.select().from(chunks).where(eq(chunks.id, chunkId)).get();
+    return chunk?.slug ?? null;
   }
 
   /**
