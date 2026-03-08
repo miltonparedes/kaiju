@@ -514,6 +514,15 @@ export class KaijuStore {
     return this.db.select().from(comments).where(eq(comments.reviewId, review.id)).all();
   }
 
+  /**
+   * Update a comment's chunk_id in SQLite.
+   * Used by the splitter output pipeline to assign comments to chunks
+   * based on file matching.
+   */
+  updateCommentChunkId(commentId: number, chunkId: number | null) {
+    this.db.update(comments).set({ chunkId }).where(eq(comments.id, commentId)).run();
+  }
+
   // ─── Findings CRUD ──────────────────────────────────────────────────────────
 
   /**
