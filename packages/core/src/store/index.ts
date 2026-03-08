@@ -47,6 +47,7 @@ function createCoreTables(db: DB) {
     description TEXT NOT NULL DEFAULT '',
     review_priority TEXT NOT NULL DEFAULT 'medium',
     estimated_tokens INTEGER NOT NULL DEFAULT 0,
+    patch TEXT,
     status TEXT NOT NULL DEFAULT 'pending',
     created_at INTEGER NOT NULL DEFAULT (unixepoch())
   )`);

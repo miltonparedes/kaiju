@@ -136,6 +136,16 @@ export async function readFilesJson(reviewDir: string): Promise<FilesJson> {
   return readJson<FilesJson>(join(reviewDir, 'files.json'));
 }
 
+// ─── raw.diff ───────────────────────────────────────────────────────────────────
+
+export async function writeRawDiff(reviewDir: string, rawDiff: string): Promise<void> {
+  await writeFile(join(reviewDir, 'raw.diff'), rawDiff, 'utf-8');
+}
+
+export async function readRawDiff(reviewDir: string): Promise<string> {
+  return readFile(join(reviewDir, 'raw.diff'), 'utf-8');
+}
+
 // ─── chunks/*.patch ─────────────────────────────────────────────────────────────
 
 export async function writeChunkPatch(

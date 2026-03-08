@@ -56,6 +56,7 @@ export interface Chunk {
   description: string;
   reviewPriority: ReviewPriority;
   estimatedTokens: number;
+  patch?: string | null;
   status: string;
   createdAt: number;
 }

@@ -15,6 +15,7 @@ import {
   writeFilesJson,
   writeFindingFile,
   writeManifest,
+  writeRawDiff,
 } from './fileIO.js';
 import type {
   ChunkMetaJson,
@@ -151,6 +152,11 @@ export class KaijuStore {
       const manifest = this.buildManifest(input, [], [], 0, 0);
       await writeManifest(reviewDir, manifest);
 
+      // Write raw.diff if rawDiff is provided
+      if (input.rawDiff) {
+        await writeRawDiff(reviewDir, input.rawDiff);
+      }
+
       this.db.run(sql`COMMIT`);
     } catch (error) {
       this.db.run(sql`ROLLBACK`);
@@ -220,9 +226,11 @@ export class KaijuStore {
     }
   }
 
-  /** Store raw diff text in the review row. */
-  setRawDiff(key: string, rawDiff: string) {
+  /** Store raw diff text in the review row and write raw.diff to disk. */
+  async setRawDiff(key: string, rawDiff: string) {
     this.db.update(reviews).set({ rawDiff }).where(eq(reviews.key, key)).run();
+    const reviewDir = getReviewDir(key, this.baseDir);
+    await writeRawDiff(reviewDir, rawDiff);
   }
 
   // ─── Files CRUD ─────────────────────────────────────────────────────────────
@@ -349,6 +357,7 @@ export class KaijuStore {
           description: input.description ?? '',
           reviewPriority: input.reviewPriority ?? 'medium',
           estimatedTokens: input.estimatedTokens ?? 0,
+          patch: input.patchContent || null,
         })
         .returning()
         .get();

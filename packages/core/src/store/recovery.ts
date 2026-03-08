@@ -20,6 +20,7 @@ import {
   writeFilesJson,
   writeFindingFile,
   writeManifest,
+  writeRawDiff,
   computeManifestStats,
 } from './fileIO.js';
 import type {
@@ -100,8 +101,15 @@ async function rebuildReview(db: KaijuDB, baseDir: string, key: string): Promise
 
   const manifest: ManifestJson = JSON.parse(await readFile(manifestPath, 'utf-8'));
 
-  // Determine status from manifest chunk presence
-  const status = manifest.chunks.length > 0 ? 'split' : 'fetched';
+  // Read status directly from manifest.json (preserves original review status)
+  const status = manifest.status || (manifest.chunks.length > 0 ? 'split' : 'fetched');
+
+  // Read rawDiff from raw.diff file on disk if it exists
+  const rawDiffPath = join(reviewDir, 'raw.diff');
+  let rawDiff: string | null = null;
+  if (existsSync(rawDiffPath)) {
+    rawDiff = await readFile(rawDiffPath, 'utf-8');
+  }
 
   // Insert the review into SQLite
   const review = db
@@ -116,7 +124,7 @@ async function rebuildReview(db: KaijuDB, baseDir: string, key: string): Promise
       base: manifest.source.base,
       head: manifest.source.head,
       status,
-      rawDiff: null,
+      rawDiff,
     })
     .returning()
     .get();
@@ -160,7 +168,14 @@ async function rebuildReview(db: KaijuDB, baseDir: string, key: string): Promise
       const metaPath = join(chunksDir, metaFile);
       const meta: ChunkMetaJson = JSON.parse(await readFile(metaPath, 'utf-8'));
 
-      // Insert chunk
+      // Read .patch file for this chunk
+      const patchPath = join(chunksDir, `${meta.id}.patch`);
+      let patchContent: string | null = null;
+      if (existsSync(patchPath)) {
+        patchContent = await readFile(patchPath, 'utf-8');
+      }
+
+      // Insert chunk with patch content
       const chunk = db
         .insert(chunks)
         .values({
@@ -170,6 +185,7 @@ async function rebuildReview(db: KaijuDB, baseDir: string, key: string): Promise
           description: meta.description,
           reviewPriority: meta.review_priority,
           estimatedTokens: meta.estimated_tokens,
+          patch: patchContent,
         })
         .returning()
         .get();
@@ -369,18 +385,19 @@ async function regenerateReview(
     };
     await writeChunkMeta(reviewDir, chunk.slug, meta);
 
-    // Write .patch — use rawDiff if available, otherwise empty placeholder
-    // Note: The raw diff for individual chunks isn't stored in SQLite;
-    // only the full review rawDiff is. For individual patches we write
-    // a placeholder since the actual patch content is only on disk.
-    // In a real scenario the rawDiff would be stored per-chunk or we'd
-    // recompute from the full diff. For now, write what we have.
-    const patchContent = review.rawDiff
-      ? extractChunkPatch(
-          review.rawDiff,
-          chunkFiles.map((f) => f.path),
-        )
-      : generatePlaceholderPatch(chunkFiles);
+    // Write .patch — use stored patch from chunks table (populated during addChunk
+    // or rebuildIndex), then fall back to extracting from rawDiff, then placeholder
+    let patchContent: string;
+    if (chunk.patch) {
+      patchContent = chunk.patch;
+    } else if (review.rawDiff) {
+      patchContent = extractChunkPatch(
+        review.rawDiff,
+        chunkFiles.map((f) => f.path),
+      );
+    } else {
+      patchContent = generatePlaceholderPatch(chunkFiles);
+    }
     await writeChunkPatch(reviewDir, chunk.slug, patchContent);
 
     // Build manifest chunk entry
@@ -491,6 +508,11 @@ async function regenerateReview(
   };
 
   await writeManifest(reviewDir, manifest);
+
+  // Write raw.diff if rawDiff is stored in SQLite
+  if (review.rawDiff) {
+    await writeRawDiff(reviewDir, review.rawDiff);
+  }
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
@@ -498,7 +520,7 @@ async function regenerateReview(
 /**
  * Extract the portions of a raw unified diff that match the given file paths.
  */
-function extractChunkPatch(rawDiff: string, filePaths: string[]): string {
+export function extractChunkPatch(rawDiff: string, filePaths: string[]): string {
   if (!rawDiff || filePaths.length === 0) return '';
 
   const pathSet = new Set(filePaths);
@@ -531,7 +553,9 @@ function extractChunkPatch(rawDiff: string, filePaths: string[]): string {
 /**
  * Generate a placeholder patch for files when rawDiff is not available.
  */
-function generatePlaceholderPatch(chunkFiles: Array<{ path: string; status: string }>): string {
+export function generatePlaceholderPatch(
+  chunkFiles: Array<{ path: string; status: string }>,
+): string {
   const parts: string[] = [];
   for (const f of chunkFiles) {
     if (f.status === 'added') {

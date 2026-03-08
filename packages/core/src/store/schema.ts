@@ -76,6 +76,7 @@ export const chunks = sqliteTable(
     description: text('description').notNull().default(''),
     reviewPriority: text('review_priority').notNull().default('medium'),
     estimatedTokens: integer('estimated_tokens').notNull().default(0),
+    patch: text('patch'),
     status: text('status').notNull().default('pending'),
     createdAt: integer('created_at')
       .notNull()

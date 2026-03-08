@@ -499,6 +499,178 @@ describe('regenerateFiles', () => {
   });
 });
 
+// ─── fix-store-recovery: status preserved from manifest ─────────────────────
+
+describe('rebuildIndex — status from manifest', () => {
+  it('reads status from manifest.json instead of inferring it', async () => {
+    // Create review + split + update to "reviewed" status
+    const review = await populateFullReview();
+    await store.updateReviewStatus(review.key, 'reviewed');
+
+    // Verify manifest has "reviewed" status
+    const reviewDir = join(tempBase, 'reviews', review.key);
+    const manifest = JSON.parse(await readFile(join(reviewDir, 'manifest.json'), 'utf-8'));
+    expect(manifest.status).toBe('reviewed');
+
+    // Rebuild from disk — must preserve "reviewed", not infer "split"
+    store.close();
+    const freshDb = createDB();
+    await rebuildIndex(freshDb, tempBase);
+    const freshStore = new KaijuStore(freshDb, tempBase);
+
+    const rebuilt = freshStore.getReview(review.key);
+    expect(rebuilt).toBeDefined();
+    expect(rebuilt!.status).toBe('reviewed');
+
+    freshStore.close();
+  });
+
+  it('reads "fetched" status when manifest has no chunks', async () => {
+    const review = await store.createReview(makeReviewInput());
+
+    store.close();
+    const freshDb = createDB();
+    await rebuildIndex(freshDb, tempBase);
+    const freshStore = new KaijuStore(freshDb, tempBase);
+
+    const rebuilt = freshStore.getReview(review.key);
+    expect(rebuilt!.status).toBe('fetched');
+
+    freshStore.close();
+  });
+});
+
+// ─── fix-store-recovery: raw.diff stored on disk ────────────────────────────
+
+describe('rebuildIndex — raw.diff on disk', () => {
+  it('recovers rawDiff from raw.diff file during rebuild', async () => {
+    const rawDiff = `diff --git a/src/auth/session.ts b/src/auth/session.ts
+new file mode 100644
+--- /dev/null
++++ b/src/auth/session.ts
+@@ -0,0 +1,5 @@
++export class SessionManager {}
+diff --git a/src/auth/middleware.ts b/src/auth/middleware.ts
+@@ -1,3 +1,5 @@
++// updated
+`;
+    const review = await store.createReview(makeReviewInput({ rawDiff }));
+
+    // Verify raw.diff was written to disk during createReview
+    const reviewDir = join(tempBase, 'reviews', review.key);
+    expect(existsSync(join(reviewDir, 'raw.diff'))).toBe(true);
+    const diskDiff = await readFile(join(reviewDir, 'raw.diff'), 'utf-8');
+    expect(diskDiff).toBe(rawDiff);
+
+    // Rebuild from disk
+    store.close();
+    const freshDb = createDB();
+    await rebuildIndex(freshDb, tempBase);
+    const freshStore = new KaijuStore(freshDb, tempBase);
+
+    const rebuilt = freshStore.getReview(review.key);
+    expect(rebuilt).toBeDefined();
+    expect(rebuilt!.rawDiff).toBe(rawDiff);
+
+    freshStore.close();
+  });
+
+  it('setRawDiff writes raw.diff to disk', async () => {
+    const review = await store.createReview(makeReviewInput());
+    const rawDiff = 'diff --git a/file.ts b/file.ts\n+new content\n';
+
+    await store.setRawDiff(review.key, rawDiff);
+
+    const reviewDir = join(tempBase, 'reviews', review.key);
+    expect(existsSync(join(reviewDir, 'raw.diff'))).toBe(true);
+    const diskDiff = await readFile(join(reviewDir, 'raw.diff'), 'utf-8');
+    expect(diskDiff).toBe(rawDiff);
+  });
+
+  it('regenerateFiles writes raw.diff from SQLite rawDiff', async () => {
+    const rawDiff = 'diff --git a/file.ts b/file.ts\n+new content\n';
+    await store.createReview(makeReviewInput({ rawDiff }));
+
+    const reviewDir = join(tempBase, 'reviews', 'github/acme/widgets/9999');
+
+    // Delete and regenerate
+    rmSync(join(tempBase, 'reviews'), { recursive: true, force: true });
+    await regenerateFiles(db, tempBase);
+
+    expect(existsSync(join(reviewDir, 'raw.diff'))).toBe(true);
+    const diskDiff = await readFile(join(reviewDir, 'raw.diff'), 'utf-8');
+    expect(diskDiff).toBe(rawDiff);
+  });
+});
+
+// ─── fix-store-recovery: patch column in chunks table ───────────────────────
+
+describe('rebuildIndex — patch column', () => {
+  it('populates chunk patch column from .patch files during rebuild', async () => {
+    const review = await populateFullReview();
+    const key = review.key;
+
+    // Rebuild
+    store.close();
+    const freshDb = createDB();
+    await rebuildIndex(freshDb, tempBase);
+    const freshStore = new KaijuStore(freshDb, tempBase);
+
+    // Check that chunk has patch content populated
+    const rebuiltChunks = freshStore.getChunks(key);
+    const authChunk = rebuiltChunks.find((c) => c.slug === '001-auth-refactor');
+    expect(authChunk).toBeDefined();
+    expect((authChunk as any).patch).toBeDefined();
+    expect((authChunk as any).patch).toContain('diff --git');
+    expect((authChunk as any).patch).toContain('SessionManager');
+
+    const mwChunk = rebuiltChunks.find((c) => c.slug === '002-middleware');
+    expect(mwChunk).toBeDefined();
+    expect((mwChunk as any).patch).toContain('diff --git');
+    expect((mwChunk as any).patch).toContain('// updated');
+
+    freshStore.close();
+  });
+});
+
+// ─── fix-store-recovery: regenerateFiles uses stored patch ──────────────────
+
+describe('regenerateFiles — uses stored patch', () => {
+  it('uses patch column from chunks table instead of placeholders', async () => {
+    const review = await populateFullReview();
+    const key = review.key;
+    const reviewDir = join(tempBase, 'reviews', key);
+
+    // Read original patches from disk
+    const origAuthPatch = await readFile(
+      join(reviewDir, 'chunks', '001-auth-refactor.patch'),
+      'utf-8',
+    );
+    const origMwPatch = await readFile(join(reviewDir, 'chunks', '002-middleware.patch'), 'utf-8');
+
+    // Rebuild to populate patch column in DB
+    store.close();
+    const freshDb = createDB();
+    await rebuildIndex(freshDb, tempBase);
+
+    // Delete disk files and regenerate from DB
+    rmSync(join(tempBase, 'reviews'), { recursive: true, force: true });
+    await regenerateFiles(freshDb, tempBase);
+
+    // Regenerated patches should match originals (not be placeholders)
+    const regenAuthPatch = await readFile(
+      join(reviewDir, 'chunks', '001-auth-refactor.patch'),
+      'utf-8',
+    );
+    const regenMwPatch = await readFile(join(reviewDir, 'chunks', '002-middleware.patch'), 'utf-8');
+
+    expect(regenAuthPatch).toBe(origAuthPatch);
+    expect(regenMwPatch).toBe(origMwPatch);
+
+    freshDb.close();
+  });
+});
+
 // ─── Round-trip: rebuild + regenerate ───────────────────────────────────────
 
 describe('round-trip recovery', () => {
@@ -530,5 +702,51 @@ describe('round-trip recovery', () => {
     expect(rebuiltSnapshot.chunks).toHaveLength(originalSnapshot.chunks.length);
 
     freshStore.close();
+  });
+
+  it('full round-trip produces semantically equivalent files', async () => {
+    const review = await populateFullReview();
+    const key = review.key;
+    const reviewDir = join(tempBase, 'reviews', key);
+
+    // Snapshot original files
+    const origManifest = JSON.parse(await readFile(join(reviewDir, 'manifest.json'), 'utf-8'));
+    const origPatch = await readFile(join(reviewDir, 'chunks', '001-auth-refactor.patch'), 'utf-8');
+    const origComment = JSON.parse(
+      await readFile(join(reviewDir, 'comments', 'gh-review-123.json'), 'utf-8'),
+    );
+
+    // Rebuild
+    store.close();
+    const freshDb = createDB();
+    await rebuildIndex(freshDb, tempBase);
+
+    // Delete all disk files and regenerate
+    rmSync(join(tempBase, 'reviews'), { recursive: true, force: true });
+    await regenerateFiles(freshDb, tempBase);
+
+    // Compare
+    const regenManifest = JSON.parse(await readFile(join(reviewDir, 'manifest.json'), 'utf-8'));
+    const regenPatch = await readFile(
+      join(reviewDir, 'chunks', '001-auth-refactor.patch'),
+      'utf-8',
+    );
+    const regenComment = JSON.parse(
+      await readFile(join(reviewDir, 'comments', 'gh-review-123.json'), 'utf-8'),
+    );
+
+    // Manifests should match
+    expect(regenManifest.source).toEqual(origManifest.source);
+    expect(regenManifest.stats).toEqual(origManifest.stats);
+    expect(regenManifest.status).toBe(origManifest.status);
+
+    // Patches should match exactly (not placeholders)
+    expect(regenPatch).toBe(origPatch);
+
+    // Comment should match
+    expect(regenComment.thread_id).toBe(origComment.thread_id);
+    expect(regenComment.messages.length).toBe(origComment.messages.length);
+
+    freshDb.close();
   });
 });
