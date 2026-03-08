@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,14 +7,7 @@ import { sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createDB } from './index.js';
-import {
-  KaijuStore,
-  type CreateChunkInput,
-  type CreateCommentInput,
-  type CreateFileInput,
-  type CreateFindingInput,
-  type CreateReviewInput,
-} from './kaijuStore.js';
+import { KaijuStore, type CreateFileInput, type CreateReviewInput } from './kaijuStore.js';
 import { regenerateFiles } from './recovery.js';
 
 let tempBase: string;

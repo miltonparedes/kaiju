@@ -139,7 +139,7 @@ describe('transaction rollback on FS failure', () => {
 
   it('rolls back SQLite when FS write fails during addFiles', async () => {
     // Create review with valid store first
-    const review = await store.createReview(makeReviewInput());
+    await store.createReview(makeReviewInput());
 
     // Now create a NEW store pointing at the SAME in-memory DB but a bad base dir.
     // Review must exist in the DB so addFiles() can find it,
