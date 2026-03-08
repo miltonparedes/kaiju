@@ -28,18 +28,18 @@ bun run dev:cli show
 
 ## CLI Commands
 
-| Command                             | Description                                     |
-| ----------------------------------- | ----------------------------------------------- |
-| `kaiju fetch <url>`                 | Fetch PR data from a GitHub URL                 |
-| `kaiju fetch --diff [range]`        | Fetch a local git diff between branches         |
-| `kaiju split [--strategy] [--max-tokens]` | Split PR into reviewable chunks           |
-| `kaiju review <url>`                | Fetch + split + open web UI (all-in-one)        |
-| `kaiju show`                        | Open web dashboard (context-aware)              |
-| `kaiju show --all`                  | Open web dashboard for all reviews              |
-| `kaiju files`                       | List files in a review                          |
-| `kaiju cat <chunk>`                 | Show chunk contents                             |
-| `kaiju status`                      | Show review status with progress                |
-| `kaiju ls`                          | List all reviews                                |
+| Command                                   | Description                              |
+| ----------------------------------------- | ---------------------------------------- |
+| `kaiju fetch <url>`                       | Fetch PR data from a GitHub URL          |
+| `kaiju fetch --diff [range]`              | Fetch a local git diff between branches  |
+| `kaiju split [--strategy] [--max-tokens]` | Split PR into reviewable chunks          |
+| `kaiju review <url>`                      | Fetch + split + open web UI (all-in-one) |
+| `kaiju show`                              | Open web dashboard (context-aware)       |
+| `kaiju show --all`                        | Open web dashboard for all reviews       |
+| `kaiju files`                             | List files in a review                   |
+| `kaiju cat <chunk>`                       | Show chunk contents                      |
+| `kaiju status`                            | Show review status with progress         |
+| `kaiju ls`                                | List all reviews                         |
 
 All commands support `--json` for machine-readable output.
 
