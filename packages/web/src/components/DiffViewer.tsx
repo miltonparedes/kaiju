@@ -118,9 +118,56 @@ function SingleFileDiff({
     () => ({
       ...options,
       enableLineSelection: true,
+      enableHoverUtility: true,
       onLineSelected: handleLineSelected,
     }),
     [options, handleLineSelected],
+  );
+
+  /** Hover utility "+" button — triggers line selection for the hovered line. */
+  const renderHoverUtility = useCallback(
+    (getHoveredLine: () => { lineNumber: number; side?: string } | undefined) => (
+      <button
+        type="button"
+        aria-label="Add finding on this line"
+        onClick={() => {
+          const hovered = getHoveredLine();
+          if (hovered) {
+            const range: SelectedLineRange = {
+              start: hovered.lineNumber,
+              end: hovered.lineNumber,
+              side: (hovered.side as 'additions' | 'deletions') ?? 'additions',
+            };
+            handleLineSelected(range);
+          }
+        }}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: '22px',
+          height: '22px',
+          borderRadius: '4px',
+          border: 'none',
+          cursor: 'pointer',
+          opacity: 0.7,
+          background: 'rgba(59, 130, 246, 0.25)',
+          color: 'rgb(96, 165, 250)',
+          fontSize: '14px',
+          lineHeight: 1,
+          transition: 'opacity 0.15s',
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.opacity = '1';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.opacity = '0.7';
+        }}
+      >
+        +
+      </button>
+    ),
+    [handleLineSelected],
   );
 
   return (
@@ -137,6 +184,7 @@ function SingleFileDiff({
               expandedFindingId={expandedFindingId}
             />
           )}
+          renderHoverUtility={renderHoverUtility}
         />
       </div>
     </div>
