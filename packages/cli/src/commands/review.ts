@@ -3,30 +3,13 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import {
-  KaijuStore,
-  createDB,
-  fetchGitHubPR,
-  getReviewDir,
-  parsePRReference,
-  splitAndPersist,
-} from '@kaiju/core';
+import { fetchGitHubPR, getReviewDir, parsePRReference, splitAndPersist } from '@kaiju/core';
 import { Command } from 'commander';
 
-import type { FetchSummaryData } from './fetch.js';
-import { formatFetchSummary } from './fetch.js';
+import { type FetchSummaryData, formatFetchSummary } from './fetch.js';
+import { createStore } from './shared.js';
 import { formatShowStartup, openBrowser, waitForServer } from './show.js';
-import type { ChunkSummaryEntry, SplitSummaryData } from './split.js';
-import { formatSplitSummary } from './split.js';
-
-// ─── Store factory ──────────────────────────────────────────────────────────────
-
-function createStore(): KaijuStore {
-  const baseDir = join(homedir(), '.kaiju');
-  const dbPath = join(baseDir, 'kaiju.db');
-  const db = createDB(dbPath);
-  return new KaijuStore(db, baseDir);
-}
+import { type ChunkSummaryEntry, type SplitSummaryData, formatSplitSummary } from './split.js';
 
 // ─── Command ────────────────────────────────────────────────────────────────────
 

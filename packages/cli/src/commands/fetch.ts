@@ -2,8 +2,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import {
-  KaijuStore,
-  createDB,
+  type KaijuStore,
   fetchGitHubPR,
   fetchLocalBranch,
   fetchLocalDiff,
@@ -11,6 +10,8 @@ import {
   parsePRReference,
 } from '@kaiju/core';
 import { Command } from 'commander';
+
+import { createStore } from './shared.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -91,15 +92,6 @@ export function formatFetchJson(data: FetchSummaryData): string {
     null,
     2,
   );
-}
-
-// ─── Store factory ──────────────────────────────────────────────────────────────
-
-function createStore(): KaijuStore {
-  const baseDir = join(homedir(), '.kaiju');
-  const dbPath = join(baseDir, 'kaiju.db');
-  const db = createDB(dbPath);
-  return new KaijuStore(db, baseDir);
 }
 
 // ─── Command ────────────────────────────────────────────────────────────────────

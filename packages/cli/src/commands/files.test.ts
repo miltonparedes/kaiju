@@ -70,4 +70,21 @@ describe('formatFilesJson', () => {
     const parsed = JSON.parse(json);
     expect(parsed.totalFiles).toBe(2);
   });
+
+  it('includes absolute paths when reviewDir is provided', () => {
+    const json = formatFilesJson(
+      [{ path: 'a.ts', status: 'added', additions: 10, deletions: 0 }],
+      '/home/user/.kaiju/reviews/github/org/repo/9999',
+    );
+    const parsed = JSON.parse(json);
+    expect(parsed.paths).toBeDefined();
+    expect(parsed.paths.reviewDir).toBe('/home/user/.kaiju/reviews/github/org/repo/9999');
+    expect(parsed.paths.filesJson).toContain('files.json');
+  });
+
+  it('omits paths when reviewDir is not provided', () => {
+    const json = formatFilesJson([{ path: 'a.ts', status: 'added', additions: 10, deletions: 0 }]);
+    const parsed = JSON.parse(json);
+    expect(parsed.paths).toBeUndefined();
+  });
 });

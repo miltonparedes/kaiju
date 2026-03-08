@@ -1,8 +1,10 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-import { KaijuStore, createDB, parsePRReference } from '@kaiju/core';
+import { getReviewDir } from '@kaiju/core';
 import { Command } from 'commander';
+
+import { createStore, resolveReviewKey } from './shared.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -26,6 +28,7 @@ export interface StatusDisplayData {
   findingCount: number;
   commentCount: number;
   highPriorityChunks: HighPriorityChunkEntry[];
+  reviewDir?: string;
 }
 
 // ─── Formatting ─────────────────────────────────────────────────────────────────
@@ -87,6 +90,7 @@ export function formatStatusSummary(data: StatusDisplayData): string {
 
 /**
  * Format status data as JSON for agent consumption.
+ * Includes absolute paths to relevant review files.
  */
 export function formatStatusJson(data: StatusDisplayData): string {
   return JSON.stringify(
@@ -108,63 +112,21 @@ export function formatStatusJson(data: StatusDisplayData): string {
         estimatedTokens: c.estimatedTokens,
         commentCount: c.commentCount,
       })),
+      ...(data.reviewDir
+        ? {
+            paths: {
+              reviewDir: data.reviewDir,
+              manifest: `${data.reviewDir}/manifest.json`,
+              files: `${data.reviewDir}/files.json`,
+              chunks: `${data.reviewDir}/chunks/`,
+              comments: `${data.reviewDir}/comments/`,
+            },
+          }
+        : {}),
     },
     null,
     2,
   );
-}
-
-// ─── Helpers ────────────────────────────────────────────────────────────────────
-
-/**
- * Resolve a review key from a PR reference or find the most recent review.
- */
-function resolveReviewKey(store: KaijuStore, prRef?: string): string | null {
-  if (prRef) {
-    try {
-      const parsed = parsePRReference(prRef);
-      const key = `github/${parsed.owner}/${parsed.repo}/${parsed.pr}`;
-      const review = store.getReview(key);
-      if (!review) {
-        console.error(
-          `Error: Review for ${parsed.owner}/${parsed.repo}#${parsed.pr} not found. Run 'kaiju fetch ${parsed.owner}/${parsed.repo}#${parsed.pr}' first.`,
-        );
-        process.exitCode = 1;
-        return null;
-      }
-      return key;
-    } catch {
-      const review = store.getReview(prRef);
-      if (review) {
-        return prRef;
-      }
-
-      console.error(
-        `Error: Invalid PR reference "${prRef}". Expected formats:\n` +
-          '  - org/repo#N\n' +
-          '  - https://github.com/org/repo/pull/N',
-      );
-      process.exitCode = 1;
-      return null;
-    }
-  }
-
-  const allReviews = store.listReviews();
-  if (allReviews.length === 0) {
-    return null;
-  }
-
-  allReviews.sort((a, b) => b.updatedAt - a.updatedAt);
-  return allReviews[0]!.key;
-}
-
-// ─── Store factory ──────────────────────────────────────────────────────────────
-
-function createStore(): KaijuStore {
-  const baseDir = join(homedir(), '.kaiju');
-  const dbPath = join(baseDir, 'kaiju.db');
-  const db = createDB(dbPath);
-  return new KaijuStore(db, baseDir);
 }
 
 // ─── Command ────────────────────────────────────────────────────────────────────
@@ -245,6 +207,9 @@ export const statusCommand = new Command('status')
           };
         });
 
+      const baseDir = join(homedir(), '.kaiju');
+      const reviewDir = getReviewDir(reviewKey, baseDir);
+
       const displayData: StatusDisplayData = {
         repo: review.repo,
         pr: review.pr,
@@ -257,6 +222,7 @@ export const statusCommand = new Command('status')
         findingCount: allFindings.length,
         commentCount: allComments.length,
         highPriorityChunks,
+        reviewDir,
       };
 
       if (options.json) {

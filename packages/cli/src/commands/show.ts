@@ -1,8 +1,10 @@
-import { execSync, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { Command } from 'commander';
+
+import { detectGitRepo } from './shared.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -40,36 +42,6 @@ export function formatShowJson(data: ShowStartupData): string {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
-
-/**
- * Detect the current git repo's remote origin URL and extract org/repo.
- * Returns null if not inside a git repo or remote not parseable.
- */
-export function detectGitRepo(): { org: string; repo: string } | null {
-  try {
-    const remoteUrl = execSync('git remote get-url origin', {
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim();
-
-    // Parse SSH format: git@github.com:org/repo.git
-    const sshMatch = remoteUrl.match(/git@[^:]+:([^/]+)\/([^/.]+?)(?:\.git)?$/);
-    if (sshMatch) {
-      return { org: sshMatch[1]!, repo: sshMatch[2]! };
-    }
-
-    // Parse HTTPS format: https://github.com/org/repo.git
-    const httpsMatch = remoteUrl.match(/https?:\/\/[^/]+\/([^/]+)\/([^/.]+?)(?:\.git)?$/);
-    if (httpsMatch) {
-      return { org: httpsMatch[1]!, repo: httpsMatch[2]! };
-    }
-
-    return null;
-  } catch {
-    // Not inside a git repo or git not available
-    return null;
-  }
-}
 
 /**
  * Open the given URL in the default browser using platform-native commands.

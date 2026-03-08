@@ -219,4 +219,11 @@ describe('formatCatJson', () => {
     expect(parsed.findings).toHaveLength(1);
     expect(parsed.findings[0].severity).toBe('critical');
   });
+
+  it('includes absolute paths to patch and meta files', () => {
+    const parsed = JSON.parse(formatCatJson(sampleData));
+    expect(parsed.paths).toBeDefined();
+    expect(parsed.paths.patch).toBe('/path/to/patch');
+    expect(parsed.paths.meta).toBe('/path/to/meta');
+  });
 });

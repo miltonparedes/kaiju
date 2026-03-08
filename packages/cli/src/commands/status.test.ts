@@ -198,4 +198,22 @@ describe('formatStatusJson', () => {
     expect(parsed.highPriorityChunks[0].estimatedTokens).toBe(2800);
     expect(parsed.highPriorityChunks[0].commentCount).toBe(2);
   });
+
+  it('includes absolute paths when reviewDir is provided', () => {
+    const dataWithPaths: StatusDisplayData = {
+      ...sampleData,
+      reviewDir: '/home/user/.kaiju/reviews/github/org/repo/9999',
+    };
+    const parsed = JSON.parse(formatStatusJson(dataWithPaths));
+    expect(parsed.paths).toBeDefined();
+    expect(parsed.paths.reviewDir).toBe('/home/user/.kaiju/reviews/github/org/repo/9999');
+    expect(parsed.paths.manifest).toContain('manifest.json');
+    expect(parsed.paths.files).toContain('files.json');
+    expect(parsed.paths.chunks).toContain('chunks/');
+  });
+
+  it('omits paths when reviewDir is not provided', () => {
+    const parsed = JSON.parse(formatStatusJson(sampleData));
+    expect(parsed.paths).toBeUndefined();
+  });
 });

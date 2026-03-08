@@ -2,9 +2,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-import { KaijuStore, createDB, getReviewDir, parsePRReference, splitAndPersist } from '@kaiju/core';
-import type { ReviewPriority } from '@kaiju/core';
+import { type ReviewPriority, getReviewDir, splitAndPersist } from '@kaiju/core';
 import { Command } from 'commander';
+
+import { createStore, resolveReviewKey } from './shared.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -123,48 +124,6 @@ function resolvePlanContent(planValue: string): string {
   return readFileSync(planValue, 'utf-8');
 }
 
-/**
- * Resolve a review key from a PR reference or find the most recent review.
- */
-function resolveReviewKey(store: KaijuStore, prRef?: string): string | null {
-  if (prRef) {
-    try {
-      const parsed = parsePRReference(prRef);
-      return `github/${parsed.owner}/${parsed.repo}/${parsed.pr}`;
-    } catch {
-      const review = store.getReview(prRef);
-      if (review) {
-        return prRef;
-      }
-
-      console.error(
-        `Error: Invalid PR reference "${prRef}". Expected formats:\n` +
-          '  - org/repo#N\n' +
-          '  - https://github.com/org/repo/pull/N',
-      );
-      process.exitCode = 1;
-      return null;
-    }
-  }
-
-  const allReviews = store.listReviews();
-  if (allReviews.length === 0) {
-    return null;
-  }
-
-  allReviews.sort((a, b) => b.updatedAt - a.updatedAt);
-  return allReviews[0]!.key;
-}
-
-// ─── Store factory ──────────────────────────────────────────────────────────────
-
-function createStore(): KaijuStore {
-  const baseDir = join(homedir(), '.kaiju');
-  const dbPath = join(baseDir, 'kaiju.db');
-  const db = createDB(dbPath);
-  return new KaijuStore(db, baseDir);
-}
-
 // ─── Command ────────────────────────────────────────────────────────────────────
 
 export const splitCommand = new Command('split')
@@ -211,20 +170,15 @@ export const splitCommand = new Command('split')
 
         const reviewKey = resolveReviewKey(store, prRef);
         if (!reviewKey) {
-          console.error('Error: No review found. Run `kaiju fetch` first to download a PR.');
-          process.exitCode = 1;
+          if (!process.exitCode) {
+            console.error('Error: No review found. Run `kaiju fetch` first to download a PR.');
+            process.exitCode = 1;
+          }
           return;
         }
 
-        // Check review exists
-        const review = store.getReview(reviewKey);
-        if (!review) {
-          console.error(
-            `Error: Review "${reviewKey}" not found. Run \`kaiju fetch\` first to download a PR.`,
-          );
-          process.exitCode = 1;
-          return;
-        }
+        // resolveReviewKey already validates the review exists, so getReview is safe here
+        const review = store.getReview(reviewKey)!;
 
         // Check that review has been fetched (has raw diff)
         if (!review.rawDiff) {
