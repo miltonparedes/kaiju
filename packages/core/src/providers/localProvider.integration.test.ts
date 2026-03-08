@@ -97,6 +97,7 @@ describe('fetchLocalBranch', () => {
     const mockGitRunner: GitRunner = async (args: string[]) => {
       const cmd = args.join(' ');
       if (cmd.includes('rev-parse --git-dir')) return '.git';
+      if (cmd.includes('symbolic-ref refs/remotes/origin/HEAD')) return 'refs/remotes/origin/main';
       if (cmd.includes('rev-parse --abbrev-ref HEAD')) return 'main';
       if (cmd.includes('diff')) return MOCK_DIFF;
       throw new Error(`Unexpected git command: ${cmd}`);
@@ -125,6 +126,7 @@ describe('fetchLocalBranch', () => {
     const mockGitRunner: GitRunner = async (args: string[]) => {
       const cmd = args.join(' ');
       if (cmd.includes('rev-parse --git-dir')) return '.git';
+      if (cmd.includes('symbolic-ref refs/remotes/origin/HEAD')) return 'refs/remotes/origin/main';
       if (cmd.includes('rev-parse --abbrev-ref HEAD')) return 'main';
       if (cmd.includes('diff')) {
         capturedDiffArgs = args;
@@ -143,6 +145,7 @@ describe('fetchLocalBranch', () => {
     const mockGitRunner: GitRunner = async (args: string[]) => {
       const cmd = args.join(' ');
       if (cmd.includes('rev-parse --git-dir')) return '.git';
+      if (cmd.includes('symbolic-ref refs/remotes/origin/HEAD')) return 'refs/remotes/origin/main';
       if (cmd.includes('rev-parse --abbrev-ref HEAD')) return 'main';
       if (cmd.includes('diff')) return MOCK_DIFF;
       throw new Error(`Unexpected git command: ${cmd}`);
@@ -171,10 +174,52 @@ describe('fetchLocalBranch', () => {
     expect(manifest.stats.total_files).toBe(2);
   });
 
+  it('falls back to repo default branch via symbolic-ref when no base specified', async () => {
+    let capturedDiffArgs: string[] = [];
+    const mockGitRunner: GitRunner = async (args: string[]) => {
+      const cmd = args.join(' ');
+      if (cmd.includes('rev-parse --git-dir')) return '.git';
+      if (cmd.includes('symbolic-ref refs/remotes/origin/HEAD'))
+        return 'refs/remotes/origin/develop';
+      if (cmd.includes('diff')) {
+        capturedDiffArgs = args;
+        return MOCK_DIFF;
+      }
+      throw new Error(`Unexpected git command: ${cmd}`);
+    };
+
+    await fetchLocalBranch(store, 'feature-branch', undefined, mockGitRunner);
+
+    // Should diff against 'develop' (the repo default branch), not HEAD
+    expect(capturedDiffArgs.join(' ')).toContain('develop...feature-branch');
+  });
+
+  it('falls back to HEAD when symbolic-ref fails (no origin/HEAD)', async () => {
+    let capturedDiffArgs: string[] = [];
+    const mockGitRunner: GitRunner = async (args: string[]) => {
+      const cmd = args.join(' ');
+      if (cmd.includes('rev-parse --git-dir')) return '.git';
+      if (cmd.includes('symbolic-ref refs/remotes/origin/HEAD'))
+        throw new Error('fatal: ref refs/remotes/origin/HEAD is not a symbolic ref');
+      if (cmd.includes('rev-parse --abbrev-ref HEAD')) return 'main';
+      if (cmd.includes('diff')) {
+        capturedDiffArgs = args;
+        return MOCK_DIFF;
+      }
+      throw new Error(`Unexpected git command: ${cmd}`);
+    };
+
+    await fetchLocalBranch(store, 'feature-branch', undefined, mockGitRunner);
+
+    // Should fall back to HEAD (main) when symbolic-ref fails
+    expect(capturedDiffArgs.join(' ')).toContain('main...feature-branch');
+  });
+
   it('handles empty diff (no changes between branches)', async () => {
     const mockGitRunner: GitRunner = async (args: string[]) => {
       const cmd = args.join(' ');
       if (cmd.includes('rev-parse --git-dir')) return '.git';
+      if (cmd.includes('symbolic-ref refs/remotes/origin/HEAD')) return 'refs/remotes/origin/main';
       if (cmd.includes('rev-parse --abbrev-ref HEAD')) return 'main';
       if (cmd.includes('diff')) return '';
       throw new Error(`Unexpected git command: ${cmd}`);
@@ -211,6 +256,7 @@ describe('dual-layer consistency after local branch fetch', () => {
     const mockGitRunner: GitRunner = async (args: string[]) => {
       const cmd = args.join(' ');
       if (cmd.includes('rev-parse --git-dir')) return '.git';
+      if (cmd.includes('symbolic-ref refs/remotes/origin/HEAD')) return 'refs/remotes/origin/main';
       if (cmd.includes('rev-parse --abbrev-ref HEAD')) return 'main';
       if (cmd.includes('diff')) return MOCK_DIFF;
       throw new Error(`Unexpected: ${cmd}`);
@@ -386,6 +432,7 @@ describe('refetchReview', () => {
     const mockGitRunnerV1: GitRunner = async (args: string[]) => {
       const cmd = args.join(' ');
       if (cmd.includes('rev-parse --git-dir')) return '.git';
+      if (cmd.includes('symbolic-ref refs/remotes/origin/HEAD')) return 'refs/remotes/origin/main';
       if (cmd.includes('rev-parse --abbrev-ref HEAD')) return 'main';
       if (cmd.includes('diff')) return MOCK_DIFF;
       throw new Error(`Unexpected: ${cmd}`);
@@ -398,6 +445,7 @@ describe('refetchReview', () => {
     const mockGitRunnerV2: GitRunner = async (args: string[]) => {
       const cmd = args.join(' ');
       if (cmd.includes('rev-parse --git-dir')) return '.git';
+      if (cmd.includes('symbolic-ref refs/remotes/origin/HEAD')) return 'refs/remotes/origin/main';
       if (cmd.includes('rev-parse --abbrev-ref HEAD')) return 'main';
       if (cmd.includes('diff')) return MOCK_DIFF_UPDATED;
       throw new Error(`Unexpected: ${cmd}`);

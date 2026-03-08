@@ -153,8 +153,21 @@ export async function fetchLocalBranch(
     );
   }
 
-  // Determine base branch if not specified
-  const base = baseBranch ?? (await gitRunner(['rev-parse', '--abbrev-ref', 'HEAD']));
+  // Determine base branch if not specified — use repo default branch (not HEAD)
+  let base: string;
+  if (baseBranch) {
+    base = baseBranch;
+  } else {
+    try {
+      // Try to get the repo's default branch via origin/HEAD
+      const symref = await gitRunner(['symbolic-ref', 'refs/remotes/origin/HEAD']);
+      // Output is like "refs/remotes/origin/main" — extract branch name
+      base = symref.replace(/^refs\/remotes\/origin\//, '');
+    } catch {
+      // Fallback to current branch if origin/HEAD is not set
+      base = await gitRunner(['rev-parse', '--abbrev-ref', 'HEAD']);
+    }
+  }
 
   // Run git diff
   const diff = await gitRunner(['diff', `${base}...${branch}`]);

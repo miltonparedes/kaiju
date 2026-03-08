@@ -61,17 +61,17 @@ interface GhReviewComment {
   path?: string;
   line?: number;
   body: string;
-  author?: { login: string };
-  createdAt: string;
-  pullRequestReviewId?: number;
-  inReplyToId?: number | null;
+  user?: { login: string };
+  created_at: string;
+  pull_request_review_id?: number;
+  in_reply_to_id?: number | null;
 }
 
 interface GhIssueComment {
   id: number;
   body: string;
-  author?: { login: string };
-  createdAt: string;
+  user?: { login: string };
+  created_at: string;
 }
 
 // ─── parsePRReference ───────────────────────────────────────────────────────────
@@ -234,16 +234,16 @@ export function groupCommentsIntoThreads(
     commentById.set(c.id, c);
   }
 
-  // Find root comment ID for each comment (walking inReplyToId chain)
+  // Find root comment ID for each comment (walking in_reply_to_id chain)
   const rootMap = new Map<number, number>();
   function findRoot(id: number): number {
     if (rootMap.has(id)) return rootMap.get(id)!;
     const comment = commentById.get(id);
-    if (!comment || !comment.inReplyToId) {
+    if (!comment || !comment.in_reply_to_id) {
       rootMap.set(id, id);
       return id;
     }
-    const root = findRoot(comment.inReplyToId);
+    const root = findRoot(comment.in_reply_to_id);
     rootMap.set(id, root);
     return root;
   }
@@ -260,7 +260,7 @@ export function groupCommentsIntoThreads(
   // Build threads from grouped review comments
   for (const [rootId, group] of threadGroups) {
     // Sort by timestamp
-    group.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    group.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
     const root = commentById.get(rootId)!;
 
@@ -271,9 +271,9 @@ export function groupCommentsIntoThreads(
       file: root.path ?? null,
       line: root.line ?? null,
       messages: group.map((c) => ({
-        author: `github:${c.author?.login ?? 'unknown'}`,
+        author: `github:${c.user?.login ?? 'unknown'}`,
         body: c.body,
-        timestamp: c.createdAt,
+        timestamp: c.created_at,
         gh_comment_id: c.id,
       })),
     });
@@ -289,9 +289,9 @@ export function groupCommentsIntoThreads(
       line: null,
       messages: [
         {
-          author: `github:${c.author?.login ?? 'unknown'}`,
+          author: `github:${c.user?.login ?? 'unknown'}`,
           body: c.body,
-          timestamp: c.createdAt,
+          timestamp: c.created_at,
           gh_comment_id: c.id,
         },
       ],
@@ -322,6 +322,63 @@ export async function defaultGhRunner(args: string[]): Promise<string> {
   }
 
   return stdout;
+}
+
+// ─── parseGhPaginatedJson ────────────────────────────────────────────────────────
+
+/**
+ * Parse JSON output from `gh api --paginate --jq '.'`.
+ *
+ * When `--paginate` is used with `--jq '.'`, `gh` concatenates the JSON arrays
+ * from each page. This may result in either:
+ * - A single JSON array (single page), e.g. `[{...}, {...}]`
+ * - Multiple concatenated arrays (multi-page), e.g. `[{...}][{...}]`
+ *
+ * This function handles both cases by attempting a direct parse first,
+ * then falling back to splitting on `][` boundaries and merging.
+ */
+export function parseGhPaginatedJson<T>(raw: string): T[] {
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed === '[]') return [];
+
+  // Fast path: single valid JSON array
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) return parsed;
+    // Single object (shouldn't happen with --jq .) but handle gracefully
+    return [parsed];
+  } catch {
+    // Fall through to concatenated array handling
+  }
+
+  // Slow path: handle concatenated arrays like `[...][...]`
+  // Split on `][` while preserving array boundaries
+  const results: T[] = [];
+  let depth = 0;
+  let start = 0;
+
+  for (let i = 0; i < trimmed.length; i++) {
+    if (trimmed[i] === '[') depth++;
+    else if (trimmed[i] === ']') {
+      depth--;
+      if (depth === 0) {
+        const segment = trimmed.slice(start, i + 1);
+        try {
+          const parsed = JSON.parse(segment);
+          if (Array.isArray(parsed)) {
+            results.push(...parsed);
+          } else {
+            results.push(parsed);
+          }
+        } catch {
+          // Skip malformed segments
+        }
+        start = i + 1;
+      }
+    }
+  }
+
+  return results;
 }
 
 // ─── fetchGitHubPR ──────────────────────────────────────────────────────────────
@@ -360,23 +417,27 @@ export async function fetchGitHubPR(
   ]);
   const metadata = parseGhPrViewJson(prViewJson);
 
-  // 3. Fetch review comments via `gh api`
+  // 3. Fetch review comments via `gh api` (with pagination)
   const reviewCommentsJson = await ghRunner([
     'api',
     `repos/${repoSlug}/pulls/${pr}/comments`,
+    '--paginate',
     '--jq',
     '.',
   ]);
-  const reviewComments: GhReviewComment[] = JSON.parse(reviewCommentsJson || '[]');
+  // --paginate concatenates JSON arrays, so we may get multiple arrays.
+  // Parse them and flatten into a single array.
+  const reviewComments: GhReviewComment[] = parseGhPaginatedJson(reviewCommentsJson || '[]');
 
-  // 4. Fetch issue-level comments via `gh api`
+  // 4. Fetch issue-level comments via `gh api` (with pagination)
   const issueCommentsJson = await ghRunner([
     'api',
     `repos/${repoSlug}/issues/${pr}/comments`,
+    '--paginate',
     '--jq',
     '.',
   ]);
-  const issueComments: GhIssueComment[] = JSON.parse(issueCommentsJson || '[]');
+  const issueComments: GhIssueComment[] = parseGhPaginatedJson(issueCommentsJson || '[]');
 
   // 5. Parse diff into file entries
   const diffFiles = parseDiffIntoFiles(diff);

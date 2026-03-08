@@ -70,9 +70,9 @@ describe('fetch integration', () => {
             path: 'src/auth/session.ts',
             line: 45,
             body: 'This needs error handling',
-            author: { login: 'reviewer1' },
-            createdAt: '2026-01-01T00:00:00Z',
-            inReplyToId: null,
+            user: { login: 'reviewer1' },
+            created_at: '2026-01-01T00:00:00Z',
+            in_reply_to_id: null,
           },
         ]),
       );

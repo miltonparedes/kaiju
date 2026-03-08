@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseDiffIntoFiles, parsePRReference } from './githubProvider.js';
+import { parseDiffIntoFiles, parseGhPaginatedJson, parsePRReference } from './githubProvider.js';
 
 // ─── parsePRReference ───────────────────────────────────────────────────────────
 
@@ -134,5 +134,39 @@ rename to new.ts
     expect(result).toHaveLength(1);
     expect(result[0]!.path).toBe('new.ts');
     expect(result[0]!.status).toBe('renamed');
+  });
+});
+
+// ─── parseGhPaginatedJson ───────────────────────────────────────────────────────
+
+describe('parseGhPaginatedJson', () => {
+  it('parses a single JSON array', () => {
+    const result = parseGhPaginatedJson('[{"id":1},{"id":2}]');
+    expect(result).toEqual([{ id: 1 }, { id: 2 }]);
+  });
+
+  it('returns empty array for empty string', () => {
+    expect(parseGhPaginatedJson('')).toEqual([]);
+  });
+
+  it('returns empty array for empty JSON array', () => {
+    expect(parseGhPaginatedJson('[]')).toEqual([]);
+  });
+
+  it('handles concatenated JSON arrays from --paginate', () => {
+    const input = '[{"id":1},{"id":2}][{"id":3},{"id":4}]';
+    const result = parseGhPaginatedJson(input);
+    expect(result).toEqual([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
+  });
+
+  it('handles three concatenated pages', () => {
+    const input = '[{"id":1}][{"id":2}][{"id":3}]';
+    const result = parseGhPaginatedJson(input);
+    expect(result).toEqual([{ id: 1 }, { id: 2 }, { id: 3 }]);
+  });
+
+  it('handles whitespace around arrays', () => {
+    const result = parseGhPaginatedJson('  [{"id":1}]  ');
+    expect(result).toEqual([{ id: 1 }]);
   });
 });

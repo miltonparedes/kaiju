@@ -166,6 +166,13 @@ async function handlePRFetch(store: KaijuStore, ref: string, json: boolean): Pro
     return;
   }
 
+  // Check for existing review and delete stale data before re-fetch
+  const existingKey = `github/${parsed.owner}/${parsed.repo}/${parsed.pr}`;
+  const existing = store.getReview(existingKey);
+  if (existing) {
+    await store.deleteReview(existingKey);
+  }
+
   const result = await fetchGitHubPR(store, parsed.owner, parsed.repo, parsed.pr);
   const reviewKey = result.reviewKey;
 
@@ -200,6 +207,15 @@ async function handlePRFetch(store: KaijuStore, ref: string, json: boolean): Pro
 }
 
 async function handleBranchFetch(store: KaijuStore, branch: string, json: boolean): Promise<void> {
+  // Check for existing review and delete stale data before re-fetch
+  // fetchLocalBranch builds a deterministic key from the branch name, so we can check
+  const allReviews = store.listReviews();
+  for (const r of allReviews) {
+    if (r.provider === 'local' && r.head === branch) {
+      await store.deleteReview(r.key);
+    }
+  }
+
   const result = await fetchLocalBranch(store, branch);
   const reviewKey = result.reviewKey;
 
