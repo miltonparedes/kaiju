@@ -335,15 +335,22 @@ export async function defaultGhRunner(args: string[]): Promise<string> {
 // ─── parseGhPaginatedJson ────────────────────────────────────────────────────────
 
 /**
- * Parse JSON output from `gh api --paginate --jq '.'`.
+ * Parse JSON output from `gh api --paginate`.
  *
- * When `--paginate` is used with `--jq '.'`, `gh` concatenates the JSON arrays
- * from each page. This may result in either:
- * - A single JSON array (single page), e.g. `[{...}, {...}]`
- * - Multiple concatenated arrays (multi-page), e.g. `[{...}][{...}]`
+ * Supports three formats produced by `gh`:
  *
- * This function handles both cases by attempting a direct parse first,
- * then falling back to splitting on `][` boundaries and merging.
+ * 1. **Single JSON array** (single page with `--jq '.'`):
+ *    `[{...}, {...}]`
+ *
+ * 2. **Concatenated JSON arrays** (multi-page with `--jq '.'`):
+ *    `[{...}][{...}]`
+ *
+ * 3. **NDJSON** (with `--jq '.[]'` — one JSON object per line):
+ *    `{...}\n{...}\n`
+ *
+ * For concatenated arrays, a state machine tracks JSON string boundaries
+ * (respecting escape sequences) so that bracket characters inside string
+ * values do not corrupt the parse.
  */
 export function parseGhPaginatedJson<T>(raw: string): T[] {
   const trimmed = raw.trim();
@@ -357,25 +364,83 @@ export function parseGhPaginatedJson<T>(raw: string): T[] {
     if (Array.isArray(parsed)) {
       return parsed;
     }
-    // Single object (shouldn't happen with --jq .) but handle gracefully
+    // Single object — wrap in array
     return [parsed];
   } catch {
-    // Fall through to concatenated array handling
+    // Fall through to multi-value handling
   }
 
-  // Slow path: handle concatenated arrays like `[...][...]`
-  // Split on `][` while preserving array boundaries
+  // Detect NDJSON (lines starting with `{`) vs concatenated arrays (starts with `[`)
+  if (trimmed[0] === '{') {
+    return parseNdjson<T>(trimmed);
+  }
+
+  // Concatenated arrays: scan for top-level `][` boundaries while
+  // respecting JSON string boundaries so brackets inside strings are ignored.
+  return parseConcatenatedArrays<T>(trimmed);
+}
+
+/**
+ * Parse NDJSON: one JSON value per line (blank lines ignored).
+ */
+function parseNdjson<T>(raw: string): T[] {
+  const results: T[] = [];
+  for (const line of raw.split('\n')) {
+    const trimmedLine = line.trim();
+    if (!trimmedLine) {
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(trimmedLine) as T;
+      results.push(parsed);
+    } catch {
+      // Skip malformed lines
+    }
+  }
+  return results;
+}
+
+/**
+ * Parse concatenated JSON arrays like `[...][...]`.
+ * Uses a state machine that tracks:
+ * - `depth`: nesting level of `[` / `]` (only outside strings)
+ * - `inString`: whether the scanner is inside a JSON string literal
+ * - `escape`: whether the previous character was a backslash (for `\"`)
+ */
+function parseConcatenatedArrays<T>(raw: string): T[] {
   const results: T[] = [];
   let depth = 0;
+  let inString = false;
+  let escape = false;
   let start = 0;
 
-  for (let i = 0; i < trimmed.length; i++) {
-    if (trimmed[i] === '[') {
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+
+    if (escape) {
+      // Previous char was `\` inside a string — skip this char regardless
+      escape = false;
+      continue;
+    }
+
+    if (inString) {
+      if (ch === '\\') {
+        escape = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    // Outside a string
+    if (ch === '"') {
+      inString = true;
+    } else if (ch === '[') {
       depth++;
-    } else if (trimmed[i] === ']') {
+    } else if (ch === ']') {
       depth--;
       if (depth === 0) {
-        const segment = trimmed.slice(start, i + 1);
+        const segment = raw.slice(start, i + 1);
         try {
           const parsed = JSON.parse(segment);
           if (Array.isArray(parsed)) {

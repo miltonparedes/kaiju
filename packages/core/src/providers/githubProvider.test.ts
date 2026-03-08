@@ -169,4 +169,64 @@ describe('parseGhPaginatedJson', () => {
     const result = parseGhPaginatedJson('  [{"id":1}]  ');
     expect(result).toEqual([{ id: 1 }]);
   });
+
+  it('parses NDJSON (one JSON object per line) from --jq ".[]"', () => {
+    const input = '{"id":1,"body":"hello"}\n{"id":2,"body":"world"}\n';
+    const result = parseGhPaginatedJson(input);
+    expect(result).toEqual([
+      { id: 1, body: 'hello' },
+      { id: 2, body: 'world' },
+    ]);
+  });
+
+  it('parses NDJSON with bracket characters inside string values', () => {
+    const input = [
+      '{"id":1,"body":"code snippet: const arr = [1, 2]; console.log(arr[0])"}',
+      '{"id":2,"body":"markdown table: | a[0] | b[1] |"}',
+      '{"id":3,"body":"normal comment"}',
+    ].join('\n');
+    const result = parseGhPaginatedJson<{ id: number; body: string }>(input);
+    expect(result).toHaveLength(3);
+    expect(result[0]!.body).toBe('code snippet: const arr = [1, 2]; console.log(arr[0])');
+    expect(result[1]!.body).toBe('markdown table: | a[0] | b[1] |');
+    expect(result[2]!.body).toBe('normal comment');
+  });
+
+  it('handles brackets in string values with concatenated arrays', () => {
+    // This was the original bug: brackets inside comment bodies corrupt parsing
+    const page1 = JSON.stringify([
+      { id: 1, body: 'Fix: `arr[0]` was wrong' },
+      { id: 2, body: 'LGTM' },
+    ]);
+    const page2 = JSON.stringify([{ id: 3, body: 'See `obj["key"]` usage' }]);
+    const input = page1 + page2;
+    const result = parseGhPaginatedJson<{ id: number; body: string }>(input);
+    expect(result).toHaveLength(3);
+    expect(result[0]!.body).toBe('Fix: `arr[0]` was wrong');
+    expect(result[2]!.body).toBe('See `obj["key"]` usage');
+  });
+
+  it('handles unbalanced brackets inside string values (closing bracket)', () => {
+    // A "]" inside a string causes premature depth=0 with naive counting
+    const input = JSON.stringify([
+      { id: 1, body: 'text ] more text' },
+      { id: 2, body: 'normal' },
+    ]);
+    const result = parseGhPaginatedJson<{ id: number; body: string }>(input);
+    expect(result).toHaveLength(2);
+    expect(result[0]!.body).toBe('text ] more text');
+    expect(result[1]!.body).toBe('normal');
+  });
+
+  it('handles multi-line NDJSON with empty lines', () => {
+    const input = '{"id":1}\n\n{"id":2}\n\n';
+    const result = parseGhPaginatedJson(input);
+    expect(result).toEqual([{ id: 1 }, { id: 2 }]);
+  });
+
+  it('handles single NDJSON object', () => {
+    const input = '{"id":42}\n';
+    const result = parseGhPaginatedJson(input);
+    expect(result).toEqual([{ id: 42 }]);
+  });
 });
