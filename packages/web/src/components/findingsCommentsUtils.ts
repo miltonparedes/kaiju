@@ -68,20 +68,8 @@ export function getSeverityStyle(severity: string) {
 }
 
 /** Severity indicator icon (colored dot). */
-export function getSeverityIcon(severity: string): string {
-  switch (severity) {
-    case 'critical':
-    case 'bug':
-      return '●';
-    case 'suggestion':
-      return '●';
-    case 'nitpick':
-      return '●';
-    case 'praise':
-      return '●';
-    default:
-      return '●';
-  }
+export function getSeverityIcon(_severity: string): string {
+  return '●';
 }
 
 // ─── Build annotations ────────────────────────────────────────────────────────
@@ -130,7 +118,7 @@ export function buildCommentAnnotations(
   // Sort each thread's comments by timestamp, create one annotation per thread
   const annotations: KaijuAnnotation[] = [];
   for (const [threadId, threadComments] of threadMap) {
-    const sorted = [...threadComments].sort((a, b) => {
+    const sorted = [...threadComments].toSorted((a, b) => {
       const ta = a.timestamp ?? '';
       const tb = b.timestamp ?? '';
       return ta.localeCompare(tb);
@@ -157,5 +145,5 @@ export function buildFileAnnotations(
 ): KaijuAnnotation[] {
   const findingAnns = buildFindingAnnotations(findings, filePath);
   const commentAnns = buildCommentAnnotations(comments, filePath);
-  return [...findingAnns, ...commentAnns].sort((a, b) => a.lineNumber - b.lineNumber);
+  return [...findingAnns, ...commentAnns].toSorted((a, b) => a.lineNumber - b.lineNumber);
 }
