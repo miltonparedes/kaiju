@@ -172,8 +172,9 @@ export const reviewCommand = new Command('review')
       const webDir = resolve(__dirname, '../../../web');
 
       // Start the Vite dev server
+      // Must use `--bun` flag so Bun's module loader handles `bun:sqlite` imports during SSR
       const bunBin = process.argv[0] ?? 'bun';
-      const child = spawn(bunBin, ['run', 'dev'], {
+      const child = spawn(bunBin, ['--bun', 'vite', 'dev'], {
         cwd: webDir,
         env,
         stdio: ['pipe', 'pipe', 'pipe'],

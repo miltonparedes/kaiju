@@ -152,8 +152,9 @@ export const showCommand = new Command('show')
 
       // Start the Vite dev server as a child process
       // Use process.argv[0] to get the full path to the bun binary
+      // Must use `--bun` flag so Bun's module loader handles `bun:sqlite` imports during SSR
       const bunBin = process.argv[0] ?? 'bun';
-      const child = spawn(bunBin, ['run', 'dev'], {
+      const child = spawn(bunBin, ['--bun', 'vite', 'dev'], {
         cwd: webDir,
         env,
         stdio: ['pipe', 'pipe', 'pipe'],
