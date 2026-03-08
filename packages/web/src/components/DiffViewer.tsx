@@ -2,6 +2,7 @@
 
 import type { SelectedLineRange } from '@pierre/diffs';
 import { type PatchDiffProps, PatchDiff, WorkerPoolContextProvider } from '@pierre/diffs/react';
+// eslint-disable-next-line import/default -- Vite-specific ?worker&url import convention
 import WorkerUrl from '@pierre/diffs/worker/worker.js?worker&url';
 import { Columns2, Rows3 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
