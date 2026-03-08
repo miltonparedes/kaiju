@@ -184,6 +184,17 @@ export function createTables(db: DB) {
   createCommentsTable(db);
   createFindingsTable(db);
   createFTS(db);
+  migrateExistingTables(db);
+}
+
+/** Migrations for existing databases that may lack newer columns. */
+function migrateExistingTables(db: DB) {
+  // reviews.body was added after initial release; existing DBs may lack it.
+  try {
+    db.run(sql`ALTER TABLE reviews ADD COLUMN body TEXT`);
+  } catch {
+    // Column already exists — safe to ignore.
+  }
 }
 
 export * from './schema.js';

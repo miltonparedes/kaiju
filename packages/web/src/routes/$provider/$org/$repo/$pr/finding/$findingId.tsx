@@ -70,7 +70,16 @@ function FindingDeepLinkPage() {
   const router = useRouter();
   const scrolledRef = useRef(false);
 
-  const [activeChunkIndex, setActiveChunkIndex] = useState(0);
+  const [activeChunkIndex, setActiveChunkIndex] = useState(() => {
+    // Find which chunk contains the deep-linked finding and select it.
+    const finding = findings.find((f) => f.id === findingId);
+    if (!finding?.chunkId) {
+      return 0;
+    }
+    const sorted = sortChunksByPriority(chunks, findings);
+    const idx = sorted.findIndex((c) => c.id === finding.chunkId);
+    return idx >= 0 ? idx : 0;
+  });
   const [activeFindingIndex, setActiveFindingIndex] = useState(initialFindingIndex);
   const [diffStyle, setDiffStyle] = useState<DiffStyle>('split');
   const [helpOpen, setHelpOpen] = useState(false);
