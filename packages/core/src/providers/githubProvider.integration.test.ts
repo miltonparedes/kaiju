@@ -234,10 +234,18 @@ describe('fetchGitHubPR', () => {
   it('writes comment files with thread grouping', async () => {
     const mockRunner: GhCliRunner = async (args: string[]) => {
       const command = args.join(' ');
-      if (command.includes('pr diff')) return MOCK_DIFF;
-      if (command.includes('pr view')) return MOCK_PR_VIEW_JSON;
-      if (command.includes('pulls/9999/comments')) return MOCK_PR_COMMENTS_JSON;
-      if (command.includes('issues/9999/comments')) return MOCK_ISSUE_COMMENTS_JSON;
+      if (command.includes('pr diff')) {
+        return MOCK_DIFF;
+      }
+      if (command.includes('pr view')) {
+        return MOCK_PR_VIEW_JSON;
+      }
+      if (command.includes('pulls/9999/comments')) {
+        return MOCK_PR_COMMENTS_JSON;
+      }
+      if (command.includes('issues/9999/comments')) {
+        return MOCK_ISSUE_COMMENTS_JSON;
+      }
       throw new Error(`Unexpected: ${command}`);
     };
 
@@ -328,10 +336,18 @@ describe('dual-layer consistency after fetch', () => {
   it('files table count equals files.json entries', async () => {
     const mockRunner: GhCliRunner = async (args: string[]) => {
       const command = args.join(' ');
-      if (command.includes('pr diff')) return MOCK_DIFF;
-      if (command.includes('pr view')) return MOCK_PR_VIEW_JSON;
-      if (command.includes('pulls/9999/comments')) return MOCK_PR_COMMENTS_JSON;
-      if (command.includes('issues/9999/comments')) return MOCK_ISSUE_COMMENTS_JSON;
+      if (command.includes('pr diff')) {
+        return MOCK_DIFF;
+      }
+      if (command.includes('pr view')) {
+        return MOCK_PR_VIEW_JSON;
+      }
+      if (command.includes('pulls/9999/comments')) {
+        return MOCK_PR_COMMENTS_JSON;
+      }
+      if (command.includes('issues/9999/comments')) {
+        return MOCK_ISSUE_COMMENTS_JSON;
+      }
       throw new Error(`Unexpected: ${command}`);
     };
 

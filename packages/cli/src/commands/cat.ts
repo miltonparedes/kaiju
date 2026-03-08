@@ -74,6 +74,11 @@ export function formatCatHeader(data: CatDisplayData): string {
         : 'general';
       const author = comment.author ?? 'unknown';
       lines.push(`  ${comment.threadId} (${location}) — ${author}`);
+      // Add comment body indented below the header line
+      const bodyLines = comment.body.split('\n');
+      for (const bodyLine of bodyLines) {
+        lines.push(`    ${bodyLine}`);
+      }
     }
   }
 
@@ -144,10 +149,21 @@ function resolveReviewKey(store: KaijuStore, prRef?: string): string | null {
   if (prRef) {
     try {
       const parsed = parsePRReference(prRef);
-      return `github/${parsed.owner}/${parsed.repo}/${parsed.pr}`;
+      const key = `github/${parsed.owner}/${parsed.repo}/${parsed.pr}`;
+      const review = store.getReview(key);
+      if (!review) {
+        console.error(
+          `Error: Review for ${parsed.owner}/${parsed.repo}#${parsed.pr} not found. Run 'kaiju fetch ${parsed.owner}/${parsed.repo}#${parsed.pr}' first.`,
+        );
+        process.exitCode = 1;
+        return null;
+      }
+      return key;
     } catch {
       const review = store.getReview(prRef);
-      if (review) return prRef;
+      if (review) {
+        return prRef;
+      }
 
       console.error(
         `Error: Invalid PR reference "${prRef}". Expected formats:\n` +
@@ -160,7 +176,9 @@ function resolveReviewKey(store: KaijuStore, prRef?: string): string | null {
   }
 
   const allReviews = store.listReviews();
-  if (allReviews.length === 0) return null;
+  if (allReviews.length === 0) {
+    return null;
+  }
 
   allReviews.sort((a, b) => b.updatedAt - a.updatedAt);
   return allReviews[0]!.key;
@@ -194,8 +212,11 @@ export const catCommand = new Command('cat')
       try {
         const reviewKey = resolveReviewKey(store, prRef);
         if (!reviewKey) {
-          console.error('Error: No review found. Run `kaiju fetch` first to download a PR.');
-          process.exitCode = 1;
+          // resolveReviewKey already printed a specific error if a PR ref was given
+          if (!process.exitCode) {
+            console.error('Error: No review found. Run `kaiju fetch` first to download a PR.');
+            process.exitCode = 1;
+          }
           return;
         }
 

@@ -283,7 +283,9 @@ export class KaijuStore {
   /** Get all files for a review. */
   getFiles(key: string) {
     const review = this.getReview(key);
-    if (!review) return [];
+    if (!review) {
+      return [];
+    }
     return this.db.select().from(files).where(eq(files.reviewId, review.id)).all();
   }
 
@@ -330,7 +332,9 @@ export class KaijuStore {
   /** Get all imports for a review. */
   getImports(key: string) {
     const review = this.getReview(key);
-    if (!review) return [];
+    if (!review) {
+      return [];
+    }
     return this.db.select().from(imports).where(eq(imports.reviewId, review.id)).all();
   }
 
@@ -429,7 +433,9 @@ export class KaijuStore {
   /** Get all chunks for a review. */
   getChunks(key: string) {
     const review = this.getReview(key);
-    if (!review) return [];
+    if (!review) {
+      return [];
+    }
     return this.db.select().from(chunks).where(eq(chunks.reviewId, review.id)).all();
   }
 
@@ -510,7 +516,9 @@ export class KaijuStore {
   /** Get all comments for a review. */
   getComments(key: string) {
     const review = this.getReview(key);
-    if (!review) return [];
+    if (!review) {
+      return [];
+    }
     return this.db.select().from(comments).where(eq(comments.reviewId, review.id)).all();
   }
 
@@ -537,7 +545,9 @@ export class KaijuStore {
    */
   deleteChunksForReview(key: string) {
     const review = this.getReview(key);
-    if (!review) return;
+    if (!review) {
+      return;
+    }
 
     // Reset file chunk_id references
     this.db.update(files).set({ chunkId: null }).where(eq(files.reviewId, review.id)).run();
@@ -631,7 +641,9 @@ export class KaijuStore {
   /** Get all findings for a review. */
   getFindings(key: string) {
     const review = this.getReview(key);
-    if (!review) return [];
+    if (!review) {
+      return [];
+    }
     return this.db.select().from(findings).where(eq(findings.reviewId, review.id)).all();
   }
 
@@ -660,11 +672,15 @@ export class KaijuStore {
    */
   async resyncChunkMeta(key: string, chunkSlug: string) {
     const review = this.getReview(key);
-    if (!review) return;
+    if (!review) {
+      return;
+    }
 
     const dbChunks = this.db.select().from(chunks).where(eq(chunks.reviewId, review.id)).all();
     const chunk = dbChunks.find((c) => c.slug === chunkSlug);
-    if (!chunk) return;
+    if (!chunk) {
+      return;
+    }
 
     const chunkFiles = this.getChunkFiles(review.id, chunk.id);
     const chunkComments = this.getChunkCommentThreadIds(review.id, chunk.id);
@@ -709,7 +725,9 @@ export class KaijuStore {
    */
   private async syncFilesJson(key: string) {
     const review = this.getReview(key);
-    if (!review) return;
+    if (!review) {
+      return;
+    }
 
     const dbFiles = this.db.select().from(files).where(eq(files.reviewId, review.id)).all();
     const dbImports = this.db.select().from(imports).where(eq(imports.reviewId, review.id)).all();
@@ -734,7 +752,9 @@ export class KaijuStore {
    */
   private async syncManifest(key: string) {
     const review = this.getReview(key);
-    if (!review) return;
+    if (!review) {
+      return;
+    }
 
     const dbFiles = this.db.select().from(files).where(eq(files.reviewId, review.id)).all();
     const dbChunks = this.db.select().from(chunks).where(eq(chunks.reviewId, review.id)).all();

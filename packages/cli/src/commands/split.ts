@@ -133,7 +133,9 @@ function resolveReviewKey(store: KaijuStore, prRef?: string): string | null {
       return `github/${parsed.owner}/${parsed.repo}/${parsed.pr}`;
     } catch {
       const review = store.getReview(prRef);
-      if (review) return prRef;
+      if (review) {
+        return prRef;
+      }
 
       console.error(
         `Error: Invalid PR reference "${prRef}". Expected formats:\n` +
@@ -146,7 +148,9 @@ function resolveReviewKey(store: KaijuStore, prRef?: string): string | null {
   }
 
   const allReviews = store.listReviews();
-  if (allReviews.length === 0) return null;
+  if (allReviews.length === 0) {
+    return null;
+  }
 
   allReviews.sort((a, b) => b.updatedAt - a.updatedAt);
   return allReviews[0]!.key;

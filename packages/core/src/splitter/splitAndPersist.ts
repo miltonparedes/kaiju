@@ -208,10 +208,12 @@ function buildSlugToIdMap(dbChunks: ReturnType<KaijuStore['getChunks']>): Map<st
 async function persistCommentFiles(
   store: KaijuStore,
   reviewKey: string,
-  resultChunks: SplitResultChunk[],
+  _resultChunks: SplitResultChunk[],
 ): Promise<void> {
   const dbComments = store.getComments(reviewKey);
-  if (dbComments.length === 0) return;
+  if (dbComments.length === 0) {
+    return;
+  }
 
   const dbChunks = store.getChunks(reviewKey);
   const chunkIdToSlug = new Map<number, string>();

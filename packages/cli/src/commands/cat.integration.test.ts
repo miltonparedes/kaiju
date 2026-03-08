@@ -216,6 +216,35 @@ describe('cat integration', () => {
       expect(header).toContain('Comments:');
       expect(header).toContain('test-thread-1');
       expect(header).toContain(chunkFile.path);
+      expect(header).toContain('    Review comment');
+    }
+  });
+
+  it('cat with multiline comment body shows all lines indented', async () => {
+    const reviewKey = await fetchAndSplit();
+    const allChunks = store.getChunks(reviewKey);
+    const firstChunk = allChunks[0]!;
+    const allFiles = store.getFiles(reviewKey);
+    const chunkFile = allFiles.find((f) => f.chunkId === firstChunk.id);
+
+    if (chunkFile) {
+      await store.addComment(reviewKey, {
+        threadId: 'test-thread-ml',
+        source: 'github',
+        chunkId: firstChunk.id,
+        file: chunkFile.path,
+        line: 5,
+        body: 'Line one\nLine two\nLine three',
+        author: 'tester',
+      });
+
+      const displayData = buildDisplayData(reviewKey, firstChunk.slug);
+      const header = formatCatHeader(displayData);
+
+      expect(header).toContain('test-thread-ml');
+      expect(header).toContain('    Line one');
+      expect(header).toContain('    Line two');
+      expect(header).toContain('    Line three');
     }
   });
 });

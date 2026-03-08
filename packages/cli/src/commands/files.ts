@@ -82,8 +82,11 @@ export const filesCommand = new Command('files')
       const reviewKey = resolveReviewKey(store, prRef);
 
       if (!reviewKey) {
-        console.error('Error: No review found. Run `kaiju fetch` first to download a PR.');
-        process.exitCode = 1;
+        // resolveReviewKey already printed a specific error if a PR ref was given
+        if (!process.exitCode) {
+          console.error('Error: No review found. Run `kaiju fetch` first to download a PR.');
+          process.exitCode = 1;
+        }
         return;
       }
 
@@ -119,11 +122,22 @@ function resolveReviewKey(store: KaijuStore, prRef?: string): string | null {
     // Try parsing as a PR reference (shorthand or URL)
     try {
       const parsed = parsePRReference(prRef);
-      return `github/${parsed.owner}/${parsed.repo}/${parsed.pr}`;
+      const key = `github/${parsed.owner}/${parsed.repo}/${parsed.pr}`;
+      const review = store.getReview(key);
+      if (!review) {
+        console.error(
+          `Error: Review for ${parsed.owner}/${parsed.repo}#${parsed.pr} not found. Run 'kaiju fetch ${parsed.owner}/${parsed.repo}#${parsed.pr}' first.`,
+        );
+        process.exitCode = 1;
+        return null;
+      }
+      return key;
     } catch {
       // Not a valid PR ref — maybe it's a raw review key
       const review = store.getReview(prRef);
-      if (review) return prRef;
+      if (review) {
+        return prRef;
+      }
 
       console.error(
         `Error: Invalid PR reference "${prRef}". Expected formats:\n` +
@@ -137,7 +151,9 @@ function resolveReviewKey(store: KaijuStore, prRef?: string): string | null {
 
   // No ref given — use the most recent review
   const allReviews = store.listReviews();
-  if (allReviews.length === 0) return null;
+  if (allReviews.length === 0) {
+    return null;
+  }
 
   // Sort by most recent (highest updatedAt)
   allReviews.sort((a, b) => b.updatedAt - a.updatedAt);

@@ -96,10 +96,18 @@ describe('fetchLocalBranch', () => {
   it('creates a review from git diff between branches', async () => {
     const mockGitRunner: GitRunner = async (args: string[]) => {
       const cmd = args.join(' ');
-      if (cmd.includes('rev-parse --git-dir')) return '.git';
-      if (cmd.includes('symbolic-ref refs/remotes/origin/HEAD')) return 'refs/remotes/origin/main';
-      if (cmd.includes('rev-parse --abbrev-ref HEAD')) return 'main';
-      if (cmd.includes('diff')) return MOCK_DIFF;
+      if (cmd.includes('rev-parse --git-dir')) {
+        return '.git';
+      }
+      if (cmd.includes('symbolic-ref refs/remotes/origin/HEAD')) {
+        return 'refs/remotes/origin/main';
+      }
+      if (cmd.includes('rev-parse --abbrev-ref HEAD')) {
+        return 'main';
+      }
+      if (cmd.includes('diff')) {
+        return MOCK_DIFF;
+      }
       throw new Error(`Unexpected git command: ${cmd}`);
     };
 
@@ -125,9 +133,15 @@ describe('fetchLocalBranch', () => {
     let capturedDiffArgs: string[] = [];
     const mockGitRunner: GitRunner = async (args: string[]) => {
       const cmd = args.join(' ');
-      if (cmd.includes('rev-parse --git-dir')) return '.git';
-      if (cmd.includes('symbolic-ref refs/remotes/origin/HEAD')) return 'refs/remotes/origin/main';
-      if (cmd.includes('rev-parse --abbrev-ref HEAD')) return 'main';
+      if (cmd.includes('rev-parse --git-dir')) {
+        return '.git';
+      }
+      if (cmd.includes('symbolic-ref refs/remotes/origin/HEAD')) {
+        return 'refs/remotes/origin/main';
+      }
+      if (cmd.includes('rev-parse --abbrev-ref HEAD')) {
+        return 'main';
+      }
       if (cmd.includes('diff')) {
         capturedDiffArgs = args;
         return MOCK_DIFF;
@@ -144,10 +158,18 @@ describe('fetchLocalBranch', () => {
   it('writes manifest.json and files.json to disk', async () => {
     const mockGitRunner: GitRunner = async (args: string[]) => {
       const cmd = args.join(' ');
-      if (cmd.includes('rev-parse --git-dir')) return '.git';
-      if (cmd.includes('symbolic-ref refs/remotes/origin/HEAD')) return 'refs/remotes/origin/main';
-      if (cmd.includes('rev-parse --abbrev-ref HEAD')) return 'main';
-      if (cmd.includes('diff')) return MOCK_DIFF;
+      if (cmd.includes('rev-parse --git-dir')) {
+        return '.git';
+      }
+      if (cmd.includes('symbolic-ref refs/remotes/origin/HEAD')) {
+        return 'refs/remotes/origin/main';
+      }
+      if (cmd.includes('rev-parse --abbrev-ref HEAD')) {
+        return 'main';
+      }
+      if (cmd.includes('diff')) {
+        return MOCK_DIFF;
+      }
       throw new Error(`Unexpected git command: ${cmd}`);
     };
 
@@ -178,7 +200,9 @@ describe('fetchLocalBranch', () => {
     let capturedDiffArgs: string[] = [];
     const mockGitRunner: GitRunner = async (args: string[]) => {
       const cmd = args.join(' ');
-      if (cmd.includes('rev-parse --git-dir')) return '.git';
+      if (cmd.includes('rev-parse --git-dir')) {
+        return '.git';
+      }
       if (cmd.includes('symbolic-ref refs/remotes/origin/HEAD'))
         return 'refs/remotes/origin/develop';
       if (cmd.includes('diff')) {
@@ -198,10 +222,14 @@ describe('fetchLocalBranch', () => {
     let capturedDiffArgs: string[] = [];
     const mockGitRunner: GitRunner = async (args: string[]) => {
       const cmd = args.join(' ');
-      if (cmd.includes('rev-parse --git-dir')) return '.git';
+      if (cmd.includes('rev-parse --git-dir')) {
+        return '.git';
+      }
       if (cmd.includes('symbolic-ref refs/remotes/origin/HEAD'))
         throw new Error('fatal: ref refs/remotes/origin/HEAD is not a symbolic ref');
-      if (cmd.includes('rev-parse --abbrev-ref HEAD')) return 'main';
+      if (cmd.includes('rev-parse --abbrev-ref HEAD')) {
+        return 'main';
+      }
       if (cmd.includes('diff')) {
         capturedDiffArgs = args;
         return MOCK_DIFF;
@@ -218,10 +246,18 @@ describe('fetchLocalBranch', () => {
   it('handles empty diff (no changes between branches)', async () => {
     const mockGitRunner: GitRunner = async (args: string[]) => {
       const cmd = args.join(' ');
-      if (cmd.includes('rev-parse --git-dir')) return '.git';
-      if (cmd.includes('symbolic-ref refs/remotes/origin/HEAD')) return 'refs/remotes/origin/main';
-      if (cmd.includes('rev-parse --abbrev-ref HEAD')) return 'main';
-      if (cmd.includes('diff')) return '';
+      if (cmd.includes('rev-parse --git-dir')) {
+        return '.git';
+      }
+      if (cmd.includes('symbolic-ref refs/remotes/origin/HEAD')) {
+        return 'refs/remotes/origin/main';
+      }
+      if (cmd.includes('rev-parse --abbrev-ref HEAD')) {
+        return 'main';
+      }
+      if (cmd.includes('diff')) {
+        return '';
+      }
       throw new Error(`Unexpected git command: ${cmd}`);
     };
 
@@ -255,10 +291,18 @@ describe('dual-layer consistency after local branch fetch', () => {
   it('files table count equals files.json entries', async () => {
     const mockGitRunner: GitRunner = async (args: string[]) => {
       const cmd = args.join(' ');
-      if (cmd.includes('rev-parse --git-dir')) return '.git';
-      if (cmd.includes('symbolic-ref refs/remotes/origin/HEAD')) return 'refs/remotes/origin/main';
-      if (cmd.includes('rev-parse --abbrev-ref HEAD')) return 'main';
-      if (cmd.includes('diff')) return MOCK_DIFF;
+      if (cmd.includes('rev-parse --git-dir')) {
+        return '.git';
+      }
+      if (cmd.includes('symbolic-ref refs/remotes/origin/HEAD')) {
+        return 'refs/remotes/origin/main';
+      }
+      if (cmd.includes('rev-parse --abbrev-ref HEAD')) {
+        return 'main';
+      }
+      if (cmd.includes('diff')) {
+        return MOCK_DIFF;
+      }
       throw new Error(`Unexpected: ${cmd}`);
     };
 
@@ -334,7 +378,9 @@ describe('fetchWithErrorHandling', () => {
   it('succeeds for valid PR reference with mock runner', async () => {
     const mockGhRunner: GitRunner = async (args: string[]) => {
       const cmd = args.join(' ');
-      if (cmd.includes('pr diff')) return MOCK_DIFF;
+      if (cmd.includes('pr diff')) {
+        return MOCK_DIFF;
+      }
       if (cmd.includes('pr view')) {
         return JSON.stringify({
           title: 'Test PR',
@@ -344,8 +390,12 @@ describe('fetchWithErrorHandling', () => {
           url: 'https://github.com/acme/widgets/pull/42',
         });
       }
-      if (cmd.includes('pulls/42/comments')) return '[]';
-      if (cmd.includes('issues/42/comments')) return '[]';
+      if (cmd.includes('pulls/42/comments')) {
+        return '[]';
+      }
+      if (cmd.includes('issues/42/comments')) {
+        return '[]';
+      }
       throw new Error(`Unexpected: ${cmd}`);
     };
 
@@ -364,7 +414,9 @@ describe('refetchReview', () => {
     // First fetch
     const mockGhRunnerV1: GitRunner = async (args: string[]) => {
       const cmd = args.join(' ');
-      if (cmd.includes('pr diff')) return MOCK_DIFF;
+      if (cmd.includes('pr diff')) {
+        return MOCK_DIFF;
+      }
       if (cmd.includes('pr view')) {
         return JSON.stringify({
           title: 'Initial Title',
@@ -374,8 +426,12 @@ describe('refetchReview', () => {
           url: 'https://github.com/acme/widgets/pull/42',
         });
       }
-      if (cmd.includes('pulls/42/comments')) return '[]';
-      if (cmd.includes('issues/42/comments')) return '[]';
+      if (cmd.includes('pulls/42/comments')) {
+        return '[]';
+      }
+      if (cmd.includes('issues/42/comments')) {
+        return '[]';
+      }
       throw new Error(`Unexpected: ${cmd}`);
     };
 
@@ -395,7 +451,9 @@ describe('refetchReview', () => {
     // Re-fetch with updated data (new file added, title changed)
     const mockGhRunnerV2: GitRunner = async (args: string[]) => {
       const cmd = args.join(' ');
-      if (cmd.includes('pr diff')) return MOCK_DIFF_UPDATED;
+      if (cmd.includes('pr diff')) {
+        return MOCK_DIFF_UPDATED;
+      }
       if (cmd.includes('pr view')) {
         return JSON.stringify({
           title: 'Updated Title',
@@ -405,8 +463,12 @@ describe('refetchReview', () => {
           url: 'https://github.com/acme/widgets/pull/42',
         });
       }
-      if (cmd.includes('pulls/42/comments')) return '[]';
-      if (cmd.includes('issues/42/comments')) return '[]';
+      if (cmd.includes('pulls/42/comments')) {
+        return '[]';
+      }
+      if (cmd.includes('issues/42/comments')) {
+        return '[]';
+      }
       throw new Error(`Unexpected: ${cmd}`);
     };
 
@@ -431,10 +493,18 @@ describe('refetchReview', () => {
     // First fetch
     const mockGitRunnerV1: GitRunner = async (args: string[]) => {
       const cmd = args.join(' ');
-      if (cmd.includes('rev-parse --git-dir')) return '.git';
-      if (cmd.includes('symbolic-ref refs/remotes/origin/HEAD')) return 'refs/remotes/origin/main';
-      if (cmd.includes('rev-parse --abbrev-ref HEAD')) return 'main';
-      if (cmd.includes('diff')) return MOCK_DIFF;
+      if (cmd.includes('rev-parse --git-dir')) {
+        return '.git';
+      }
+      if (cmd.includes('symbolic-ref refs/remotes/origin/HEAD')) {
+        return 'refs/remotes/origin/main';
+      }
+      if (cmd.includes('rev-parse --abbrev-ref HEAD')) {
+        return 'main';
+      }
+      if (cmd.includes('diff')) {
+        return MOCK_DIFF;
+      }
       throw new Error(`Unexpected: ${cmd}`);
     };
 
@@ -444,10 +514,18 @@ describe('refetchReview', () => {
     // Second fetch with more files
     const mockGitRunnerV2: GitRunner = async (args: string[]) => {
       const cmd = args.join(' ');
-      if (cmd.includes('rev-parse --git-dir')) return '.git';
-      if (cmd.includes('symbolic-ref refs/remotes/origin/HEAD')) return 'refs/remotes/origin/main';
-      if (cmd.includes('rev-parse --abbrev-ref HEAD')) return 'main';
-      if (cmd.includes('diff')) return MOCK_DIFF_UPDATED;
+      if (cmd.includes('rev-parse --git-dir')) {
+        return '.git';
+      }
+      if (cmd.includes('symbolic-ref refs/remotes/origin/HEAD')) {
+        return 'refs/remotes/origin/main';
+      }
+      if (cmd.includes('rev-parse --abbrev-ref HEAD')) {
+        return 'main';
+      }
+      if (cmd.includes('diff')) {
+        return MOCK_DIFF_UPDATED;
+      }
       throw new Error(`Unexpected: ${cmd}`);
     };
 

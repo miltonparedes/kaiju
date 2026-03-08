@@ -96,10 +96,30 @@ describe('formatCatHeader', () => {
     expect(output).toContain(sampleData.metaPath);
   });
 
-  it('includes comment details', () => {
+  it('includes comment details with body', () => {
     const output = formatCatHeader(sampleData);
     expect(output).toContain('gh-review-123');
     expect(output).toContain('src/auth/session.ts');
+    expect(output).toContain('    Should rotate session');
+  });
+
+  it('indents multiline comment body', () => {
+    const multilineData: CatDisplayData = {
+      ...sampleData,
+      comments: [
+        {
+          threadId: 'thread-1',
+          file: 'src/main.ts',
+          line: 10,
+          author: 'alice',
+          body: 'First line\nSecond line\nThird line',
+        },
+      ],
+    };
+    const output = formatCatHeader(multilineData);
+    expect(output).toContain('    First line');
+    expect(output).toContain('    Second line');
+    expect(output).toContain('    Third line');
   });
 });
 

@@ -119,7 +119,9 @@ export function parsePRReference(ref: string): ParsedPRRef {
  * Handles added, deleted, modified, and renamed files.
  */
 export function parseDiffIntoFiles(diff: string): DiffFileEntry[] {
-  if (!diff || !diff.trim()) return [];
+  if (!diff || !diff.trim()) {
+    return [];
+  }
 
   const files: DiffFileEntry[] = [];
   const lines = diff.split('\n');
@@ -135,7 +137,9 @@ export function parseDiffIntoFiles(diff: string): DiffFileEntry[] {
 
       // Parse the b/ path from the diff header
       const match = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
-      if (!match) continue;
+      if (!match) {
+        continue;
+      }
 
       const bPath = match[2]!;
 
@@ -148,7 +152,9 @@ export function parseDiffIntoFiles(diff: string): DiffFileEntry[] {
       continue;
     }
 
-    if (!currentFile) continue;
+    if (!currentFile) {
+      continue;
+    }
 
     // Detect file status markers
     if (line.startsWith('new file mode')) {
@@ -237,7 +243,9 @@ export function groupCommentsIntoThreads(
   // Find root comment ID for each comment (walking in_reply_to_id chain)
   const rootMap = new Map<number, number>();
   function findRoot(id: number): number {
-    if (rootMap.has(id)) return rootMap.get(id)!;
+    if (rootMap.has(id)) {
+      return rootMap.get(id)!;
+    }
     const comment = commentById.get(id);
     if (!comment || !comment.in_reply_to_id) {
       rootMap.set(id, id);
@@ -339,12 +347,16 @@ export async function defaultGhRunner(args: string[]): Promise<string> {
  */
 export function parseGhPaginatedJson<T>(raw: string): T[] {
   const trimmed = raw.trim();
-  if (!trimmed || trimmed === '[]') return [];
+  if (!trimmed || trimmed === '[]') {
+    return [];
+  }
 
   // Fast path: single valid JSON array
   try {
     const parsed = JSON.parse(trimmed);
-    if (Array.isArray(parsed)) return parsed;
+    if (Array.isArray(parsed)) {
+      return parsed;
+    }
     // Single object (shouldn't happen with --jq .) but handle gracefully
     return [parsed];
   } catch {
@@ -358,8 +370,9 @@ export function parseGhPaginatedJson<T>(raw: string): T[] {
   let start = 0;
 
   for (let i = 0; i < trimmed.length; i++) {
-    if (trimmed[i] === '[') depth++;
-    else if (trimmed[i] === ']') {
+    if (trimmed[i] === '[') {
+      depth++;
+    } else if (trimmed[i] === ']') {
       depth--;
       if (depth === 0) {
         const segment = trimmed.slice(start, i + 1);

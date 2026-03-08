@@ -70,7 +70,9 @@ export interface FindingRemap {
  * for code/diff content). Returns 0 for empty content.
  */
 export function estimateTokens(content: string): number {
-  if (!content) return 0;
+  if (!content) {
+    return 0;
+  }
   // Approximate: 1 token ≈ 4 characters for code-like content
   return Math.ceil(content.length / 4);
 }
@@ -82,7 +84,9 @@ export function estimateTokens(content: string): number {
  * Returns the concatenated patch sections for the given file paths.
  */
 export function extractPatchForFiles(rawDiff: string, filePaths: string[]): string {
-  if (!rawDiff || filePaths.length === 0) return '';
+  if (!rawDiff || filePaths.length === 0) {
+    return '';
+  }
 
   const pathSet = new Set(filePaths);
   const lines = rawDiff.split('\n');
