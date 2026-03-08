@@ -136,6 +136,10 @@ export const showCommand = new Command('show')
         PORT: String(port),
       };
 
+      // Always delete inherited context vars so --all never leaks them
+      delete env.KAIJU_CONTEXT_ORG;
+      delete env.KAIJU_CONTEXT_REPO;
+
       // Context detection: if inside a git repo and --all not set, pass context
       if (!options.all) {
         const gitRepo = detectGitRepo();

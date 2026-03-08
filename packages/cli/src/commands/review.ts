@@ -162,6 +162,10 @@ export const reviewCommand = new Command('review')
         PORT: String(port),
       };
 
+      // Always delete inherited context vars before setting fresh ones
+      delete env.KAIJU_CONTEXT_ORG;
+      delete env.KAIJU_CONTEXT_REPO;
+
       // Context detection: pass the repo from the fetched PR
       env.KAIJU_CONTEXT_ORG = parsed.owner;
       env.KAIJU_CONTEXT_REPO = parsed.repo;
