@@ -10,33 +10,78 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ProviderOrgRepoPrIndexRouteImport } from './routes/$provider/$org/$repo/$pr/index'
+import { Route as ProviderOrgRepoPrFindingFindingIdRouteImport } from './routes/$provider/$org/$repo/$pr/finding/$findingId'
+import { Route as ProviderOrgRepoPrChunkChunkIdRouteImport } from './routes/$provider/$org/$repo/$pr/chunk/$chunkId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProviderOrgRepoPrIndexRoute = ProviderOrgRepoPrIndexRouteImport.update({
+  id: '/$provider/$org/$repo/$pr/',
+  path: '/$provider/$org/$repo/$pr/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProviderOrgRepoPrFindingFindingIdRoute =
+  ProviderOrgRepoPrFindingFindingIdRouteImport.update({
+    id: '/$provider/$org/$repo/$pr/finding/$findingId',
+    path: '/$provider/$org/$repo/$pr/finding/$findingId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ProviderOrgRepoPrChunkChunkIdRoute =
+  ProviderOrgRepoPrChunkChunkIdRouteImport.update({
+    id: '/$provider/$org/$repo/$pr/chunk/$chunkId',
+    path: '/$provider/$org/$repo/$pr/chunk/$chunkId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/$provider/$org/$repo/$pr/': typeof ProviderOrgRepoPrIndexRoute
+  '/$provider/$org/$repo/$pr/chunk/$chunkId': typeof ProviderOrgRepoPrChunkChunkIdRoute
+  '/$provider/$org/$repo/$pr/finding/$findingId': typeof ProviderOrgRepoPrFindingFindingIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/$provider/$org/$repo/$pr': typeof ProviderOrgRepoPrIndexRoute
+  '/$provider/$org/$repo/$pr/chunk/$chunkId': typeof ProviderOrgRepoPrChunkChunkIdRoute
+  '/$provider/$org/$repo/$pr/finding/$findingId': typeof ProviderOrgRepoPrFindingFindingIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/$provider/$org/$repo/$pr/': typeof ProviderOrgRepoPrIndexRoute
+  '/$provider/$org/$repo/$pr/chunk/$chunkId': typeof ProviderOrgRepoPrChunkChunkIdRoute
+  '/$provider/$org/$repo/$pr/finding/$findingId': typeof ProviderOrgRepoPrFindingFindingIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/$provider/$org/$repo/$pr/'
+    | '/$provider/$org/$repo/$pr/chunk/$chunkId'
+    | '/$provider/$org/$repo/$pr/finding/$findingId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/$provider/$org/$repo/$pr'
+    | '/$provider/$org/$repo/$pr/chunk/$chunkId'
+    | '/$provider/$org/$repo/$pr/finding/$findingId'
+  id:
+    | '__root__'
+    | '/'
+    | '/$provider/$org/$repo/$pr/'
+    | '/$provider/$org/$repo/$pr/chunk/$chunkId'
+    | '/$provider/$org/$repo/$pr/finding/$findingId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ProviderOrgRepoPrIndexRoute: typeof ProviderOrgRepoPrIndexRoute
+  ProviderOrgRepoPrChunkChunkIdRoute: typeof ProviderOrgRepoPrChunkChunkIdRoute
+  ProviderOrgRepoPrFindingFindingIdRoute: typeof ProviderOrgRepoPrFindingFindingIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +93,36 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/$provider/$org/$repo/$pr/': {
+      id: '/$provider/$org/$repo/$pr/'
+      path: '/$provider/$org/$repo/$pr'
+      fullPath: '/$provider/$org/$repo/$pr/'
+      preLoaderRoute: typeof ProviderOrgRepoPrIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/$provider/$org/$repo/$pr/finding/$findingId': {
+      id: '/$provider/$org/$repo/$pr/finding/$findingId'
+      path: '/$provider/$org/$repo/$pr/finding/$findingId'
+      fullPath: '/$provider/$org/$repo/$pr/finding/$findingId'
+      preLoaderRoute: typeof ProviderOrgRepoPrFindingFindingIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/$provider/$org/$repo/$pr/chunk/$chunkId': {
+      id: '/$provider/$org/$repo/$pr/chunk/$chunkId'
+      path: '/$provider/$org/$repo/$pr/chunk/$chunkId'
+      fullPath: '/$provider/$org/$repo/$pr/chunk/$chunkId'
+      preLoaderRoute: typeof ProviderOrgRepoPrChunkChunkIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ProviderOrgRepoPrIndexRoute: ProviderOrgRepoPrIndexRoute,
+  ProviderOrgRepoPrChunkChunkIdRoute: ProviderOrgRepoPrChunkChunkIdRoute,
+  ProviderOrgRepoPrFindingFindingIdRoute:
+    ProviderOrgRepoPrFindingFindingIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

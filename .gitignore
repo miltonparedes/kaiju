@@ -8,4 +8,5 @@ drizzle/meta
 test-results
 .claude
 .factory
+
 .mcp.json

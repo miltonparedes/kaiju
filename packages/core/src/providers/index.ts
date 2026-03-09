@@ -11,3 +11,6 @@ export function createProvider(_name: string): GitProviderClient {
     },
   };
 }
+
+export * from './githubProvider.js';
+export * from './localProvider.js';
